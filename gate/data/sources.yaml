@@ -1,0 +1,33 @@
+# Sources and selection parameters for the detector data files (PRD Section 6.2.1, T-30).
+# Built by `python -m analysis.detector_data <cmd>`; outputs are committed and hashed in
+# gate/data/manifest.json, then frozen by the pre-registration (T-08).
+d2:
+  # WikiText-2 raw test split (CC BY-SA), read through the Hugging Face dataset viewer rows API
+  # (JSON; the repo itself only ships parquet). Each row is one line of the raw file; an empty
+  # row is a blank line.
+  repo: Salesforce/wikitext
+  commit: b08601e04326c79dfdd32d625aee71d232d685c3
+  config: wikitext-2-raw-v1
+  split: test
+  rows_api: https://datasets-server.huggingface.co/rows
+  max_rows: 400          # enough rows to exceed 2,048 tokens; the corpus is cut by tokens
+  tokens: 2048           # reference tokenizer (served reference model /tokenize)
+d3:
+  repo: databricks/databricks-dolly-15k
+  commit: bdd27f4d94b9c1f951818a7da7fd7aeea5dbff1a
+  file: databricks-dolly-15k.jsonl
+  n: 256
+  min_chars: 20
+  max_chars: 300
+d5:
+  # MMLU (MIT). data.tar holds the original per-subject CSVs; test questions are ordered by
+  # subject file name, then row.
+  repo: cais/mmlu
+  commit: c30699e8356da336a370243923dbaf21066bb9fe
+  file: data.tar
+  sample: 2000
+  n_probs: 10
+  lo: 0.25
+  hi: 0.75
+  panel: 256
+  hidden_pool: 512
