@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+
+# Large artifacts and local runs (never committed)
+models/
+artifacts/
+runs/
+*.gguf
+*.bin
+
+# Secrets and scratch
+.env
+.scratch/
