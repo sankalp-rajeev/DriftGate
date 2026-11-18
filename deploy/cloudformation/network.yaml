@@ -1,0 +1,423 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  DriftGate per-session network stack (FR-21, ADR-005). VPC with public and
+  private subnets in two AZs, one NAT gateway, an S3 gateway endpoint, an
+  internet-facing ALB, security groups (NFR-04, NFR-06) and IMDSv2-only launch
+  templates for the serving instances and build host. Created by `make up` at
+  the start of a Lab session and deleted by `make down` at the end.
+
+Parameters:
+  ProjectTag:
+    Type: String
+    Default: driftgate
+    Description: Value of the Project cost-allocation tag on every taggable resource.
+  VpcCidr:
+    Type: String
+    Default: 10.42.0.0/16
+  PublicSubnetACidr:
+    Type: String
+    Default: 10.42.0.0/24
+  PublicSubnetBCidr:
+    Type: String
+    Default: 10.42.1.0/24
+  PrivateSubnetACidr:
+    Type: String
+    Default: 10.42.10.0/24
+  PrivateSubnetBCidr:
+    Type: String
+    Default: 10.42.11.0/24
+  ServingPort:
+    Type: Number
+    Default: 8080
+    MinValue: 1
+    MaxValue: 65535
+    Description: llama-server listen port on serving instances; only the ALB may reach it.
+  InstanceProfileName:
+    Type: String
+    Default: LabInstanceProfile
+    Description: Pre-created Lab instance profile (role creation is denied in the Lab).
+  InstanceType:
+    Type: String
+    Default: t3.large
+  RootVolumeSize:
+    Type: Number
+    Default: 20
+    Description: Root EBS volume size in GiB (PRD Section 15 assumes 20 GB).
+
+Resources:
+  # ---------------------------------------------------------------- VPC
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-vpc"
+        - Key: Project
+          Value: !Ref ProjectTag
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-igw"
+        - Key: Project
+          Value: !Ref ProjectTag
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref InternetGateway
+
+  # ------------------------------------------------------------ Subnets
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref PublicSubnetACidr
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-public-a"
+        - Key: Project
+          Value: !Ref ProjectTag
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref PublicSubnetBCidr
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-public-b"
+        - Key: Project
+          Value: !Ref ProjectTag
+
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref PrivateSubnetACidr
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-private-a"
+        - Key: Project
+          Value: !Ref ProjectTag
+
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref PrivateSubnetBCidr
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-private-b"
+        - Key: Project
+          Value: !Ref ProjectTag
+
+  # ------------------------------------------------------------ Routing
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-public"
+        - Key: Project
+          Value: !Ref ProjectTag
+
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTable
+
+  # One NAT gateway for both private subnets: cost over AZ redundancy (PRD Section 15).
+  NatEip:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-nat-eip"
+        - Key: Project
+          Value: !Ref ProjectTag
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatEip.AllocationId
+      SubnetId: !Ref PublicSubnetA
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-nat"
+        - Key: Project
+          Value: !Ref ProjectTag
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-private"
+        - Key: Project
+          Value: !Ref ProjectTag
+
+  PrivateDefaultRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetA
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetB
+      RouteTableId: !Ref PrivateRouteTable
+
+  # S3 gateway endpoint (no hourly charge): model, bundle and logits traffic skips the NAT.
+  S3GatewayEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.s3"
+      VpcEndpointType: Gateway
+      RouteTableIds:
+        - !Ref PrivateRouteTable
+
+  # ----------------------------------------------------- Security groups
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: DriftGate ALB - HTTP and HTTPS from the internet only
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: HTTP
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: HTTPS
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-alb"
+        - Key: Project
+          Value: !Ref ProjectTag
+
+  ServingSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: DriftGate serving instances - llama-server port from the ALB only, no SSH
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref ServingPort
+          ToPort: !Ref ServingPort
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+          Description: llama-server from ALB
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-serving"
+        - Key: Project
+          Value: !Ref ProjectTag
+
+  BuildHostSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: DriftGate build host - no inbound, driven by SSM Run Command
+      VpcId: !Ref Vpc
+      SecurityGroupIngress: []
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-build-host"
+        - Key: Project
+          Value: !Ref ProjectTag
+
+  # ---------------------------------------------------------------- ALB
+  # Target group and forwarding rules belong to the CodeDeploy task (T-12); the
+  # default action answers 503 until that task attaches the serving target group.
+  Alb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Type: application
+      Scheme: internet-facing
+      Subnets:
+        - !Ref PublicSubnetA
+        - !Ref PublicSubnetB
+      SecurityGroups:
+        - !Ref AlbSecurityGroup
+      LoadBalancerAttributes:
+        - Key: routing.http.drop_invalid_header_fields.enabled
+          Value: "true"
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-alb"
+        - Key: Project
+          Value: !Ref ProjectTag
+
+  AlbHttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref Alb
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: "503"
+            ContentType: text/plain
+            MessageBody: no serving target attached
+
+  # ---------------------------------------------------- Launch templates
+  # IMDSv2 required, no key pair, LabInstanceProfile, encrypted root volume.
+  # AMI and user data are chosen by the tasks that launch instances (T-12, T-28).
+  ServingLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub "${AWS::StackName}-serving"
+      LaunchTemplateData:
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile:
+          Name: !Ref InstanceProfileName
+        SecurityGroupIds:
+          - !Ref ServingSecurityGroup
+        MetadataOptions:
+          HttpTokens: required
+          HttpEndpoint: enabled
+          HttpPutResponseHopLimit: 1
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs:
+              VolumeType: gp3
+              VolumeSize: !Ref RootVolumeSize
+              Encrypted: true
+              DeleteOnTermination: true
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Project
+                Value: !Ref ProjectTag
+              - Key: Role
+                Value: serving
+          - ResourceType: volume
+            Tags:
+              - Key: Project
+                Value: !Ref ProjectTag
+
+  BuildHostLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub "${AWS::StackName}-build-host"
+      LaunchTemplateData:
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile:
+          Name: !Ref InstanceProfileName
+        SecurityGroupIds:
+          - !Ref BuildHostSecurityGroup
+        MetadataOptions:
+          HttpTokens: required
+          HttpEndpoint: enabled
+          HttpPutResponseHopLimit: 1
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs:
+              VolumeType: gp3
+              VolumeSize: !Ref RootVolumeSize
+              Encrypted: true
+              DeleteOnTermination: true
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Project
+                Value: !Ref ProjectTag
+              - Key: Role
+                Value: build-host
+          - ResourceType: volume
+            Tags:
+              - Key: Project
+                Value: !Ref ProjectTag
+
+Outputs:
+  VpcId:
+    Value: !Ref Vpc
+    Export:
+      Name: !Sub "${AWS::StackName}-VpcId"
+  PublicSubnetIds:
+    Value: !Join [",", [!Ref PublicSubnetA, !Ref PublicSubnetB]]
+    Export:
+      Name: !Sub "${AWS::StackName}-PublicSubnetIds"
+  PrivateSubnetIds:
+    Value: !Join [",", [!Ref PrivateSubnetA, !Ref PrivateSubnetB]]
+    Export:
+      Name: !Sub "${AWS::StackName}-PrivateSubnetIds"
+  AlbArn:
+    Value: !Ref Alb
+    Export:
+      Name: !Sub "${AWS::StackName}-AlbArn"
+  AlbDnsName:
+    Description: Live URL host for the demo (FR-01, Section 9.1)
+    Value: !GetAtt Alb.DNSName
+    Export:
+      Name: !Sub "${AWS::StackName}-AlbDnsName"
+  AlbListenerArn:
+    Value: !Ref AlbHttpListener
+    Export:
+      Name: !Sub "${AWS::StackName}-AlbListenerArn"
+  AlbSecurityGroupId:
+    Value: !Ref AlbSecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-AlbSecurityGroupId"
+  ServingSecurityGroupId:
+    Value: !Ref ServingSecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-ServingSecurityGroupId"
+  BuildHostSecurityGroupId:
+    Value: !Ref BuildHostSecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-BuildHostSecurityGroupId"
+  ServingLaunchTemplateId:
+    Value: !Ref ServingLaunchTemplate
+    Export:
+      Name: !Sub "${AWS::StackName}-ServingLaunchTemplateId"
+  BuildHostLaunchTemplateId:
+    Value: !Ref BuildHostLaunchTemplate
+    Export:
+      Name: !Sub "${AWS::StackName}-BuildHostLaunchTemplateId"
