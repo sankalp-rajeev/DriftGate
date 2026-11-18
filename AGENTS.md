@@ -13,11 +13,45 @@ DriftGate is a release gate for self-hosted LLM serving on llama.cpp. It answers
 
 ## Your role
 
-The human owner makes design decisions; you implement the task you were given against its acceptance criteria.
+You work autonomously through the backlog in GitHub Issues, following the Working loop below. The human owner makes design decisions and approves the gated items listed under "Stop-and-ask gates"; everything else you build, test and merge yourself.
 
-- Implement only what the task describes. If the spec is ambiguous or missing a decision, stop and ask. Do not pick a design, threshold, library or model on your own.
+- `PRD.md` and the "Decisions already made" section below are your spec. Do not pick a design, threshold, library, model or tool that neither names. When a decision is missing, file it as a question on the issue (label `needs-info`), skip that issue and keep working on others.
 - Do not do research tasks (choosing between approaches, surveying tools). Report the gap instead.
-- Keep diffs small and scoped to the task. No drive-by refactors.
+- Keep each PR scoped to one issue. No drive-by refactors.
+
+## Decisions already made
+
+- Python 3.11+, managed with `uv`. One `pyproject.toml` at the root. Top-level packages `gate`, `faults`, `analysis`, `orchestrator` (no `src/` layout). Dev tools: `pytest`, `ruff` (line length 100, target py311, rules E, F, I, B, UP). License MIT.
+- llama.cpp built from source in `~/llama.cpp` (CPU build); binaries found through `LLAMA_CPP_BIN` (default `~/llama.cpp/build/bin`). Pin the llama.cpp commit in `serving/llama_cpp.lock`.
+- Models (FR-01): Qwen2.5-1.5B-Instruct Q8_0 GGUF for serving and the fault study; Qwen2.5-0.5B-Instruct GGUF for CI and fast tests. Downloaded into `models/` (gitignored) by a make target; never committed.
+- Serving config (FR-03) is one YAML file, `serving/config.yaml`, plus chat templates under `serving/templates/`.
+- Gate and detector output is JSON with a stable, versioned schema.
+- Offline AWS code (orchestrator Lambda, approval handler) is tested with `moto`; CloudFormation is checked with `cfn-lint`. No real AWS calls anywhere in tests.
+- Long runs (calibration, fault matrix) run in `tmux`, write logs and results under `runs/<date>-<task>/`, and never block the loop: start them, then continue with other issues.
+
+## Working loop
+
+1. **Backlog.** If the repo has no `T-NN` issues yet, run `/to-issues` (or `/to-tickets`) on `PRD.md` Section 12. One issue per task, titled `T-NN: <task>`, body with the FR ids, acceptance criteria copied from the PRD, and `Blocked by #n` for dependencies. Label off-AWS tasks `ready-for-agent`; label Lab tasks, human tasks and gated tasks `ready-for-human`.
+2. **Pick** the next `ready-for-agent` issue in the priority order below whose blockers are closed.
+3. **Branch** `t-NN-short-name` from an up-to-date `main`.
+4. **Build with `/tdd`:** turn each acceptance criterion into a failing test first (`tests/test_frNN_*.py`), then make it pass.
+5. **Verify:** `make lint` and `make test` pass locally.
+6. **PR:** title `T-NN: <summary>`, body with `Closes #n`, the acceptance criteria as a checklist with evidence (command plus output) for each.
+7. **Merge:** when CI is green, squash-merge and delete the branch. If CI fails, use `/diagnose`. After three failed attempts on the same failure, comment on the issue, label it `needs-info`, close the PR as draft and move on.
+8. **Repeat** from step 2. Use `/handoff` before your context gets long, so the next session can continue.
+9. **Stop** when no `ready-for-agent` issue is unblocked. Post a summary comment on the latest PR: what merged, what is waiting on the human and why.
+
+Priority order for the off-AWS phase: T-03 (repo skeleton), T-04 (serving, manifest, hashes), T-05 (gate CLI: D3, D5, D6), build-stage checks D1 and D2 as `deploy/build.sh` runnable locally (local part of T-11), T-06 (fault injector F1 to F4, A/A harness), T-07 (GitHub Actions gate job), T-14 (docker compose: llama-server, Prometheus, Grafana, OTel), T-25 (orchestrator Lambda, offline with moto), T-12 (appspec and hook scripts, runnable against local llama-server), T-10 (CloudFormation template, cfn-lint only), `iam/` policy documents, T-27 (draft the Lab Constraints appendix). T-15 and T-16 start only after the human merges T-08.
+
+## Stop-and-ask gates
+
+Do not do these yourself. Label the issue `ready-for-human`, comment what is needed, and continue with other issues.
+
+- Any AWS or Learner Lab action, and any command that calls AWS. You may write AWS code and templates; you may not run them against AWS.
+- The pre-registration (T-08): you may draft it in a PR, but never merge it. The human merges it.
+- Choosing or changing a detector threshold, a prompt budget, or an alpha.
+- Adding a dependency, model, dataset or tool that `PRD.md` or this file does not name.
+- Anything that spends money or deletes data outside the repo.
 
 ## Hard rules (never break these)
 
@@ -28,7 +62,8 @@ The human owner makes design decisions; you implement the task you were given ag
 5. Keep detectors deterministic given a seed. Every randomized step takes an explicit `--seed`.
 6. Run `make test` and `make lint` before proposing a diff. Both must pass.
 7. Tag every commit message and PR title with the task id, e.g. `T-04: add SHA-256 manifest check`.
-8. Never call AWS or create cloud resources from a task unless the task explicitly says so.
+8. Never call AWS or create cloud resources (see Stop-and-ask gates).
+9. Never force-push to `main` and never rewrite history on `main`.
 
 ## Environment
 
@@ -74,7 +109,7 @@ driftgate/
 
 ## Conventions
 
-- One branch per task: `t-NN-short-name`.
+- One branch and one PR per issue: `t-NN-short-name`.
 - Tests are keyed by requirement id in the file name (`tests/test_fr06_logprob_agreement.py`). Each acceptance criterion in a task maps to at least one test or a documented manual check.
 - Gate and detector output is JSON with a stable schema; never print-only.
 - Paths, ports, model names and thresholds come from config files, not hard-coded values.
