@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup test lint fmt up down orchestrator-zip
+.PHONY: help setup test lint fmt models verify serve up down orchestrator-zip
 
 # Keep the project venv isolated from any PYTHONPATH set by the shell (e.g. a sourced ROS setup).
 unexport PYTHONPATH
@@ -25,6 +25,15 @@ lint: ## Run ruff (lint and format check)
 
 fmt: ## Auto-format
 	uv run ruff format . && uv run ruff check --fix .
+
+models: ## Download pinned models into models/ and record SHA-256 in the manifest
+	uv run python -m gate.models
+
+verify: ## Check the served model against the SHA-256 manifest (FR-02)
+	uv run python -m gate.manifest verify
+
+serve: ## Run llama-server from serving/config.yaml (CONFIG=... to override)
+	uv run python -m gate.serve --config $(or $(CONFIG),serving/config.yaml)
 
 orchestrator-zip: ## Package the orchestrator Lambda (committed HEAD) to artifacts/orchestrator.zip
 	mkdir -p artifacts && git archive --format=zip -o artifacts/orchestrator.zip HEAD orchestrator/

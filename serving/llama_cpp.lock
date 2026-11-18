@@ -1,0 +1,6 @@
+# Pinned llama.cpp build (CPU). F8 (engine bump) is a diff to this file plus a rebuild.
+# `gate.serve` refuses to start a llama-server whose `--version` commit differs.
+repo: https://github.com/ggml-org/llama.cpp
+commit: 8c16babba5d4c66e28a19d86e572e4b04f522d52
+describe: b12479-12-g8c16babba
+build_number: 12491
