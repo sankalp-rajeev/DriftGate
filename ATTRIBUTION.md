@@ -13,3 +13,4 @@ Third-party code, tools, models and datasets used by DriftGate. Licenses come fr
 | WikiText-2 | D2 corpus (raw test split) | CC BY-SA | TBD (verify) |
 | databricks-dolly-15k | D3 prompt set | CC BY-SA 3.0 | https://huggingface.co/datasets/databricks/databricks-dolly-15k |
 | MMLU (`cais/mmlu`) | D5 panel and hidden pool | MIT | https://huggingface.co/datasets/cais/mmlu |
+| cfn-lint | CloudFormation template validation (dev tool) | MIT-0 | https://github.com/aws-cloudformation/cfn-lint |

@@ -1,8 +1,14 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup test lint fmt orchestrator-zip
+.PHONY: help setup test lint fmt up down orchestrator-zip
 
 # Keep the project venv isolated from any PYTHONPATH set by the shell (e.g. a sourced ROS setup).
 unexport PYTHONPATH
+
+# Per-session network stack (FR-21). `make up` / `make down` call AWS: run them only in a Lab session.
+AWS_REGION ?= us-east-1
+STACK_NAME ?= driftgate-net
+CFN_DIR := deploy/cloudformation
+CFN_TEMPLATES := $(CFN_DIR)/*.yaml
 
 help: ## List make targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-8s %s\n", $$1, $$2}'
@@ -15,9 +21,16 @@ test: ## Run the test suite
 
 lint: ## Run ruff (lint and format check)
 	uv run ruff check . && uv run ruff format --check .
+	uv run cfn-lint $(CFN_TEMPLATES)
 
 fmt: ## Auto-format
 	uv run ruff format . && uv run ruff check --fix .
 
 orchestrator-zip: ## Package the orchestrator Lambda (committed HEAD) to artifacts/orchestrator.zip
 	mkdir -p artifacts && git archive --format=zip -o artifacts/orchestrator.zip HEAD orchestrator/
+
+up: ## Create or update the per-session network stack (calls AWS; Lab only)
+	aws cloudformation deploy --region $(AWS_REGION) --stack-name $(STACK_NAME) --template-file $(CFN_DIR)/network.yaml --parameter-overrides file://$(CFN_DIR)/network-params.json --tags Project=driftgate --no-fail-on-empty-changeset
+
+down: ## Delete the per-session network stack and wait (calls AWS; Lab only)
+	aws cloudformation delete-stack --region $(AWS_REGION) --stack-name $(STACK_NAME) && aws cloudformation wait stack-delete-complete --region $(AWS_REGION) --stack-name $(STACK_NAME)
