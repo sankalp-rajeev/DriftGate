@@ -4,6 +4,7 @@ Layout under `<run_prefix>`:
   <run_id>/run.json              the run record (schema below)
   <run_id>/build-log/...         SSM Run Command output (written by SSM)
   index/<kind>/<key>.json        pointer {"run_id": ...} from an external id to its run
+                                 (kinds: event, ssm, codedeploy, approval-pending)
 
 Run record schema (version 1):
   schema_version, run_id, status (running|succeeded|failed), current_stage,
@@ -145,6 +146,20 @@ class RunStore:
 
     def put_index(self, kind: str, key: str, run_id: str) -> None:
         self._put_json(self._index_key(kind, key), {"run_id": run_id})
+
+    def delete_index(self, kind: str, key: str) -> None:
+        self.s3.delete_object(Bucket=self.bucket, Key=self._index_key(kind, key))
+
+    def list_index(self, kind: str) -> list[str]:
+        """Keys (not run ids) currently in an index, e.g. runs awaiting approval."""
+        prefix = f"{self.prefix}index/{kind}/"
+        keys: list[str] = []
+        for page in self.s3.get_paginator("list_objects_v2").paginate(
+            Bucket=self.bucket, Prefix=prefix
+        ):
+            for obj in page.get("Contents", []):
+                keys.append(obj["Key"][len(prefix) : -len(".json")])
+        return keys
 
     def lookup(self, kind: str, key: str) -> str | None:
         found = self._get_json(self._index_key(kind, key))
