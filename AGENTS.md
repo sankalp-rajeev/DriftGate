@@ -23,7 +23,7 @@ You work autonomously through the backlog in GitHub Issues, following the Workin
 
 - Python 3.11+, managed with `uv`. One `pyproject.toml` at the root. Top-level packages `gate`, `faults`, `analysis`, `orchestrator` (no `src/` layout). Dev tools: `pytest`, `ruff` (line length 100, target py311, rules E, F, I, B, UP). License MIT.
 - llama.cpp built from source in `~/llama.cpp` (CPU build); binaries found through `LLAMA_CPP_BIN` (default `~/llama.cpp/build/bin`). Pin the llama.cpp commit in `serving/llama_cpp.lock`.
-- Models (FR-01): Qwen2.5-1.5B-Instruct Q8_0 GGUF for serving and the fault study; Qwen2.5-0.5B-Instruct GGUF for CI and fast tests. Downloaded into `models/` (gitignored) by a make target; never committed.
+- Models, download sources, detector data (D2 corpus, D3 prompts, D5 panel and hidden pool), detector metrics, the D5 interval method, D6 and the F3 flags are fixed in `PRD.md` Section 6.2.1. Follow it exactly. Models download into `models/` (gitignored) by a make target; never committed.
 - Serving config (FR-03) is one YAML file, `serving/config.yaml`, plus chat templates under `serving/templates/`.
 - Gate and detector output is JSON with a stable, versioned schema.
 - Offline AWS code (orchestrator Lambda, approval handler) is tested with `moto`; CloudFormation is checked with `cfn-lint`. No real AWS calls anywhere in tests.
@@ -31,17 +31,17 @@ You work autonomously through the backlog in GitHub Issues, following the Workin
 
 ## Working loop
 
-1. **Backlog.** If the repo has no `T-NN` issues yet, run `/to-issues` (or `/to-tickets`) on `PRD.md` Section 12. One issue per task, titled `T-NN: <task>`, body with the FR ids, acceptance criteria copied from the PRD, and `Blocked by #n` for dependencies. Label off-AWS tasks `ready-for-agent`; label Lab tasks, human tasks and gated tasks `ready-for-human`.
+1. **Backlog.** The human creates the issues with `/to-tickets` (it is user-invoked only). Never create `T-NN` issues yourself. If no unblocked `ready-for-agent` issue exists, stop and report.
 2. **Pick** the next `ready-for-agent` issue in the priority order below whose blockers are closed.
 3. **Branch** `t-NN-short-name` from an up-to-date `main`.
 4. **Build with `/tdd`:** turn each acceptance criterion into a failing test first (`tests/test_frNN_*.py`), then make it pass.
 5. **Verify:** `make lint` and `make test` pass locally.
 6. **PR:** title `T-NN: <summary>`, body with `Closes #n`, the acceptance criteria as a checklist with evidence (command plus output) for each.
-7. **Merge:** when CI is green, squash-merge and delete the branch. If CI fails, use `/diagnose`. After three failed attempts on the same failure, comment on the issue, label it `needs-info`, close the PR as draft and move on.
-8. **Repeat** from step 2. Use `/handoff` before your context gets long, so the next session can continue.
+7. **Merge:** when CI is green, squash-merge and delete the branch. If CI or a test fails, use `/diagnosing-bugs`. After three failed attempts on the same failure, comment on the issue, label it `needs-info`, close the PR as draft and move on.
+8. **Repeat** from step 2. When your context is getting long, finish or park the current issue, write `docs/agents/handoff.md` (merged so far, the issue in progress and its branch, next issue, open questions, running tmux jobs), commit it to `main`, and stop. The human starts a new session that begins by reading that file.
 9. **Stop** when no `ready-for-agent` issue is unblocked. Post a summary comment on the latest PR: what merged, what is waiting on the human and why.
 
-Priority order for the off-AWS phase: T-03 (repo skeleton), T-04 (serving, manifest, hashes), T-05 (gate CLI: D3, D5, D6), build-stage checks D1 and D2 as `deploy/build.sh` runnable locally (local part of T-11), T-06 (fault injector F1 to F4, A/A harness), T-07 (GitHub Actions gate job), T-14 (docker compose: llama-server, Prometheus, Grafana, OTel), T-25 (orchestrator Lambda, offline with moto), T-12 (appspec and hook scripts, runnable against local llama-server), T-10 (CloudFormation template, cfn-lint only), `iam/` policy documents, T-27 (draft the Lab Constraints appendix). T-15 and T-16 start only after the human merges T-08.
+Priority order for the off-AWS phase: T-03, T-04, T-30, T-05, T-11, T-06, T-08 (draft only, never merge), T-07, T-14, T-25, T-12, T-10, T-29, T-27. T-15 and T-16 start only after the human merges T-08.
 
 ## Stop-and-ask gates
 
@@ -67,7 +67,7 @@ Do not do these yourself. Label the issue `ready-for-human`, comment what is nee
 
 ## Environment
 
-- Development runs in WSL2 Ubuntu. The repo lives under the Linux home folder (`~/driftgate`), not `/mnt/c`.
+- Development runs in WSL2 Ubuntu. The repo lives at `~/projects/driftgate`, not under `/mnt/c`.
 - Python 3.11+, managed with `uv`. Use `uv run` for every Python command.
 - llama.cpp is built locally from source; its binaries are found through `LLAMA_CPP_BIN` (default `~/llama.cpp/build/bin`).
 - CPU only. Do not add GPU code paths.

@@ -7,9 +7,19 @@
 | Instructor | Professor Furat Al-Obaidy |
 | Demo | Wednesday 2 December 2026 |
 | Teardown deadline | Thursday 3 December 2026 (within 24 h of demo) |
-| Version | 1.1, 18 November 2026 (v1.0 approved 9 November 2026) |
-| Status | P0 Spec approved; Lab probes done; Lab-native design approved by instructor 18 Nov; P2 Plan and P3 Build next |
+| Version | 1.2, 18 November 2026 (v1.1 same day; v1.0 approved 9 November 2026) |
+| Status | P0 Spec approved; Lab probes done; Lab-native design approved by instructor 18 Nov; agent setup done (T-02); P2 Plan and P3 Build next |
 | Process | Agentic SDLC, defined in Section 11 |
+
+### Changes in v1.2
+
+| Area | Change |
+| --- | --- |
+| Detector data and statistics | New Section 6.2.1 fixes models, download sources, the D2 corpus, the D3 prompt set and metric, the D5 panel, its selection rule and interval method, D6, and the F3 flags |
+| Merging | The coding agent squash-merges its own PRs after green CI; the human reviews after merge and merges gated PRs only (Section 11) |
+| Task cards | GitHub Issues replace `tasks/T-NN.md` (Sections 11 and 12) |
+| Backlog | T-02 is agent setup (done); ADRs move into T-03; T-05 adds D6 measurement; T-11 split into T-11 (local build checks) and T-28 (Lab build host wiring); new T-29 (IAM policy documents) and T-30 (detector data); T-16 becomes F5 evasion plus D6 threshold calibration |
+| Open questions | Qwen2.5 licences resolved (Apache-2.0); KV-cache flags named |
 
 ### Changes in v1.1
 
@@ -103,7 +113,7 @@ Every requirement has acceptance criteria (AC) that an automated test or a recor
 
 | ID | Requirement | Acceptance criteria |
 | --- | --- | --- |
-| FR-01 | Serve Qwen2.5-1.5B-Instruct Q8_0 GGUF (fallback 0.5B) with llama-server under systemd | `/health` returns ok after boot and after instance restart; `--metrics` endpoint returns Prometheus text |
+| FR-01 | Serve Qwen2.5-1.5B-Instruct Q8_0 GGUF (fallback 0.5B; files and sources in Section 6.2.1) with llama-server under systemd | `/health` returns ok after boot and after instance restart; `--metrics` endpoint returns Prometheus text |
 | FR-02 | Pin model artifacts by SHA-256 in a manifest | Build fails if any artifact hash differs from the manifest |
 | FR-03 | Serving config (template file, sampler defaults, context, cache type, threads) lives in a versioned config file | Every fault in FR-10 is expressible as a config or artifact diff |
 
@@ -119,6 +129,23 @@ Status: llama-server answers `/v1/chat/completions` locally in WSL (Qwen2.5-0.5B
 | FR-07 (D4) | MMD two-sample test on sampled completions (Model Equality Testing code) | ValidateService (optional) | p-value and decision at pre-registered alpha |
 | FR-08 (D5) | Exact-match panel of "sometimes right" items | ValidateService | Paired per-item delta with interval vs baseline |
 | FR-09 (D6) | Latency SLO from llama-server metrics and gate timing | ValidateService and alarm | p95 TTFT and inter-token latency vs baseline budget |
+
+### 6.2.1 Detector data and statistics (decided 18 November 2026)
+
+All data files below are built once by T-30, committed (text only, small), hashed, and frozen by the pre-registration (T-08). Selection uses the reference model only, never a faulted one.
+
+| Item | Decision |
+| --- | --- |
+| Reference model | `Qwen/Qwen2.5-1.5B-Instruct-GGUF`, file `qwen2.5-1.5b-instruct-q8_0.gguf` (Apache-2.0). F1 uses `qwen2.5-1.5b-instruct-q4_k_m.gguf` and F2 uses `qwen2.5-1.5b-instruct-q2_k.gguf` from the same repo |
+| CI and fast-test model | `Qwen/Qwen2.5-0.5B-Instruct-GGUF`, file `qwen2.5-0.5b-instruct-q8_0.gguf` (Apache-2.0). Q8_0 so the CI model follows the same Q8_0 → Q4_K_M → Q2_K ladder |
+| Downloads | `https://huggingface.co/<repo>/resolve/<commit>/<file>`, with the repo commit pinned in `serving/models.yaml`; SHA-256 recorded in the manifest at first download (FR-02). Files land in `models/` (gitignored) |
+| D2 corpus | The first 2,048 tokens (reference tokenizer) of the WikiText-2 raw test split (CC BY-SA), committed as `gate/data/d2_corpus.txt`. `llama-perplexity -c 512`. Reference logits are produced once with `--kl-divergence-base` on the reference model and stored in `artifacts/reference/` locally and in S3 for the build host; never in git |
+| D3 prompt set | 256 instructions from `databricks/databricks-dolly-15k` (CC BY-SA 3.0): records with an empty `context`, instruction length 20 to 300 characters, sampled with seed 0, committed as `gate/data/d3_prompts.jsonl`. Rendered through the serving chat template. Budgets 16, 64 and 256 are the first N records in file order |
+| D3 generation and metric | Greedy (temperature 0), 32 new tokens, `n_probs` 10, fixed seed. Per prompt: (a) agreement length, the number of generated tokens identical to the reference before the first difference, as a share of 32; (b) approximate KL(reference ‖ candidate) at each aligned position up to and including the first difference, computed over the union of both top-10 sets with probabilities missing from one side floored at 1e-6 and both sides renormalized. Reported: mean agreement share, mean and 95th-percentile approximate KL |
+| D5 panel | MMLU test split (`cais/mmlu`, MIT). Zero-shot prompt ending "Answer with A, B, C or D." A seeded sample of 2,000 questions (seed 0) is scored once on the reference model by the probability of the gold letter among the first generated token's top-10 (absent = 0). "Sometimes right" = gold-letter probability in [0.25, 0.75]. After a seed-0 shuffle, the first 256 such items form the public panel `gate/data/d5_panel.jsonl`; the next up to 512 form the hidden pool `gate/data/d5_hidden_pool.jsonl` for FR-14 |
+| D5 scoring and statistics | Exact match of the first generated letter (greedy) against gold. Statistic: paired per-item delta in accuracy (candidate minus reference) on identical items. 95% interval by paired bootstrap (10,000 resamples, seed 0, percentile method); exact McNemar p-value reported alongside. The gate threshold comes from A/A calibration (FR-12), not from the interval |
+| D6 | p95 time to first token and p95 inter-token latency over the D3 run, from llama-server response timings. Budget threshold from A/A calibration |
+| F3 flags | `--cache-type-k q4_0 --cache-type-v q4_0 --flash-attn on` (V-cache quantization needs flash attention). T-04 confirms these flags in the pinned build's `llama-server --help` and stops if they differ |
 
 ### 6.3 Fault injection and calibration
 
@@ -337,8 +364,8 @@ A development lifecycle in which the human owns intent, design decisions and app
 | --- | --- | --- |
 | P0 Spec | This `PRD.md` | Human: goals, FRs, ACs and rubric map accepted |
 | P1 Design | `docs/adr/ADR-00N.md`, `docs/architecture.md`, `iam/*.json` | Human: ADRs accepted; Lab probe results recorded |
-| P2 Plan | `tasks/T-NN.md` cards (Section 12) | Human: each card has FR link, inputs, outputs, AC, mode tag |
-| P3 Build | Code, configs, tests on a branch per task | Automated: tests and lint pass; Human: review for every PR |
+| P2 Plan | GitHub Issues `T-NN` created with `/to-tickets` (Section 12) | Human: runs `/to-tickets`; each issue has FR link, AC, dependencies, `ready-for-agent` or `ready-for-human` label |
+| P3 Build | Code, configs, tests on a branch and PR per issue | Automated: tests, lint and CI pass, then the agent squash-merges; Human: reviews after merge, and merges gated PRs (pre-registration, IAM, anything that touches AWS) |
 | P4 Verify | Test reports, A/A calibration, fault matrix | Automated: FR ACs pass; Human: pre-registration respected, results reviewed |
 | P5 Release | Pipeline runs, tagged release | Automated: the gate itself (DriftGate gates its own deploys) |
 | P6 Operate | Dashboards, alarm history, cost log | Human: daily cost check; rollback drills pass |
@@ -354,7 +381,6 @@ driftgate/
   docs/adr/            # ADR-001..
   docs/prereg/         # pre-registration (committed before fault runs)
   docs/lab-constraints.md  # FR-28 appendix
-  tasks/               # T-01..T-NN task cards
   gate/                # detectors D1..D6, CLI, JSON verdicts
   faults/              # fault injector and fault definitions
   analysis/            # calibration and matrix scripts, notebooks
@@ -368,7 +394,7 @@ driftgate/
 
 `AGENTS.md` must state: never edit `docs/prereg/` after the pre-registration commit; never change thresholds by hand; never commit credentials; keep detectors deterministic given a seed; run `make test` before proposing a diff; tag every PR with the task card id.
 
-Task card template (`tasks/T-NN.md`):
+Task cards are GitHub Issues titled `T-NN: <task>` (tracker conventions in `docs/agents/issue-tracker.md`). Issue body template:
 
 ```
 id: T-NN
@@ -380,7 +406,7 @@ acceptance: commands that must pass, expected outputs
 out-of-scope: what not to touch
 ```
 
-Definition of done for any task: AC commands pass in CI, the human reviewed and approved the diff, no change to pre-registered files.
+Definition of done for any task: AC commands pass in CI, the PR is merged (by the agent, or by the human for gated PRs), no change to pre-registered files.
 
 ### 11.4 Division of work
 
@@ -392,7 +418,7 @@ The human keeps the decisions an agent should not make alone:
 | --- | --- |
 | Approving ADRs and task cards | Sets scope and architecture |
 | The pre-registration commit and thresholds rule | Results are only credible if these are fixed before data |
-| Reviewing and merging every PR | One accountable reviewer for every change |
+| Merging gated PRs and reviewing the rest after merge | One accountable reviewer; gated changes never merge without the human |
 | Running Lab sessions, cost checks and teardown | Spends real credit; irreversible deletions |
 | Interpreting results and choosing resume numbers | Claims must match measured data |
 
@@ -406,13 +432,16 @@ Rebased on Wednesday 18 November 2026. Thanksgiving (26 Nov) is a planned day of
 | --- | --- | --- | --- | --- | --- |
 | T-01 Lab day-one probes (Section 14) | NFR | Human | 17 Nov | P1 | Done (CodeDeploy with LabRole still open, T-01b) |
 | T-01b CodeDeploy probe: app and EC2 group with LabRole as service role, ALB, one alarm | FR-17, FR-19 | Human | 19 Nov | P1 | To do |
-| T-02 ADR-001 to ADR-010, architecture doc | All | Human approves | 19 Nov | P1 | To do |
-| T-03 Repo skeleton, `AGENTS.md`, task cards | All | Agent | 19 Nov | P2 | To do |
+| T-02 Agent setup: `AGENTS.md`, skills, permissions, issue tracker | All | Human | 18 Nov | P1 | Done (PR #1) |
+| T-03 Repo skeleton, ADR-001 to ADR-010 from Section 8, architecture doc (spec: `docs/agents/T-03.md`) | All | Agent | 19 Nov | P2 | To do |
 | T-04 Local llama-server with manifest and hashes | FR-01, FR-02 | Agent | 20 Nov | P3 | Partial (smoke test 17 Nov) |
-| T-05 Gate CLI with D3 and D5, JSON verdicts | FR-06, FR-08 | Agent | 21 Nov | P3 | To do |
+| T-30 Detector data: D2 corpus, D3 prompts, D5 panel and hidden pool (Section 6.2.1) | FR-05, FR-06, FR-08, FR-14 | Agent | 20 Nov | P3 | To do |
+| T-05 Gate CLI with D3, D5 and D6 measurement, JSON verdicts (no thresholds) | FR-06, FR-08, FR-09 | Agent | 21 Nov | P3 | To do |
 | T-06 Fault injector F1 to F4, A/A harness | FR-10 | Agent | 21 Nov | P3 | To do |
-| T-08 Pre-registration commit | FR-11 | Human approves | 22 Nov | P4 | To do |
-| T-11 Build stage: `build.sh` with tests, D1, D2, hashes, run via SSM | FR-04, FR-05, FR-16 | Agent | 23 Nov | P3 | To do |
+| T-08 Pre-registration commit (agent drafts, human merges) | FR-11 | Human approves | 22 Nov | P4 | To do |
+| T-11 Build checks: `deploy/build.sh` with tests, D1, D2, hashes, runnable locally | FR-02, FR-04, FR-05 | Agent | 23 Nov | P3 | To do |
+| T-28 Build host in the Lab: run `build.sh` via SSM, logs and bundle to S3 | FR-16 | Human (Lab) | 25 Nov | P3 | To do |
+| T-29 Least-privilege policy documents in `iam/`, one per service, with enforced-or-documented status | NFR-06 | Agent | 24 Nov | P3 | To do |
 | T-25 Lambda orchestrator, run record, EventBridge wiring | FR-15 | Agent | 24 Nov | P3 | To do (trigger path verified 17 Nov) |
 | T-10 CloudFormation per-session network stack | FR-21 | Agent | 24 Nov | P3 | To do |
 | T-12 CodeDeploy appspec and hooks, ALB target group | FR-17, FR-18 | Agent | 25 Nov | P3 | To do |
@@ -421,7 +450,7 @@ Rebased on Wednesday 18 November 2026. Thanksgiving (26 Nov) is a planned day of
 | T-07 GitHub Actions job on 0.5B model | FR-26 | Agent | 27 Nov | P3 | To do |
 | T-15 Fault matrix F1 to F9, calibration (laptop) | FR-12, FR-13 | Agent | 27 Nov | P4 | To do |
 | T-14 Prometheus, Grafana, OTel (laptop) | FR-22 to FR-24 | Agent | 28 Nov | P6 | To do |
-| T-16 F5 evasion test, D6 latency | FR-09, FR-14 | Agent | 28 Nov | P4 | To do |
+| T-16 F5 evasion test (public panel vs hidden pool) and D6 threshold calibration | FR-09, FR-14 | Agent | 28 Nov | P4 | To do |
 | T-09 Issue on infer-check | Gap | Human | 28 Nov | P7 | To do |
 | T-17 Cost Explorer snapshot | NFR-03 | Human | 29 Nov, refresh 2 Dec before teardown | P6 | To do |
 | T-18 Analysis scripts and plots; RQ answers reviewed | RQ1 to RQ3 | Agent, human reviews | 29 Nov | P7 | To do |
@@ -575,8 +604,7 @@ Never cut: A/A calibration, 3+ faults with automatic rollback, push-triggered pi
 ## 18. Open questions
 
 - Which Learner Lab variant (Foundational or Associate) the course uses, and its allow-list for CodeDeploy service roles, Lambda function URLs, NAT, Access Analyzer.
-- Qwen2.5-1.5B-Instruct licence (verify before committing to it).
-- Exact llama-server flag name for KV-cache quantization in the pinned build.
+- Confirm the KV-cache flags in Section 6.2.1 against the pinned llama.cpp build (T-04).
 - Size of stored reference logits for a 2k-token corpus with a ~150k vocabulary (measure on day 2).
 
 ---
