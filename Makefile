@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup test lint fmt
+.PHONY: help setup test lint fmt orchestrator-zip
 
 # Keep the project venv isolated from any PYTHONPATH set by the shell (e.g. a sourced ROS setup).
 unexport PYTHONPATH
@@ -18,3 +18,6 @@ lint: ## Run ruff (lint and format check)
 
 fmt: ## Auto-format
 	uv run ruff format . && uv run ruff check --fix .
+
+orchestrator-zip: ## Package the orchestrator Lambda (committed HEAD) to artifacts/orchestrator.zip
+	mkdir -p artifacts && git archive --format=zip -o artifacts/orchestrator.zip HEAD orchestrator/
