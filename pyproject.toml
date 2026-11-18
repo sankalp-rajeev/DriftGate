@@ -6,11 +6,17 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
 dependencies = [
+    "boto3>=1.44.6",
     "pyyaml>=6.0.3",
 ]
 
 [dependency-groups]
-dev = ["pytest", "ruff"]
+dev = [
+    "cfn-lint>=1.60.1",
+    "moto[codedeploy,s3,sns,ssm]>=5.2.5",
+    "pytest",
+    "ruff",
+]
 
 [build-system]
 requires = ["setuptools>=77"]

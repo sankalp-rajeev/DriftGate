@@ -12,5 +12,7 @@ DriftGate is a release gate for self-hosted LLM serving on llama.cpp. It answers
 | `make test` | Run the test suite |
 | `make lint` | Run ruff (lint and format check) |
 | `make fmt` | Auto-format |
+| `make up` | Create the per-session network stack in the Lab (calls AWS) |
+| `make down` | Delete the per-session network stack (calls AWS) |
 
 See `PRD.md` for requirements and `docs/architecture.md` for the design.
