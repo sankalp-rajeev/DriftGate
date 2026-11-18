@@ -32,6 +32,15 @@ Parameters:
   CodeKey:
     Type: String
     Default: lambda/orchestrator.zip
+  ApprovalEmail:
+    Type: String
+    Description: Address that receives approval emails (confirm the SNS subscription once)
+  ApprovalSweepSchedule:
+    Type: String
+    Default: rate(5 minutes)
+    Description: >-
+      How often expired approvals are rejected. The timeout itself is approval.timeout_seconds
+      in orchestrator/config.json; this only bounds how late a timeout is recorded.
 
 Resources:
   OrchestratorFunction:
@@ -53,6 +62,66 @@ Resources:
           DRIFTGATE_BUILD_INSTANCE_IDS: !Ref BuildInstanceId
           DRIFTGATE_CODEDEPLOY_APPLICATION: !Ref CodeDeployApplication
           DRIFTGATE_CODEDEPLOY_GROUP: !Ref CodeDeployGroup
+          DRIFTGATE_APPROVAL_TOPIC_ARN: !Ref ApprovalTopic
+          DRIFTGATE_APPROVAL_URL: !GetAtt ApprovalFunctionUrl.FunctionUrl
+
+  # Approval handler: same code bundle, entry point orchestrator.approval.lambda_handler.
+  # On approve it starts the CodeDeploy deployment, so it shares the orchestrator settings.
+  ApprovalFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: driftgate-approval
+      Runtime: python3.12
+      Handler: orchestrator.approval.lambda_handler
+      Role: !Ref LabRoleArn
+      Timeout: 30
+      MemorySize: 256
+      Code:
+        S3Bucket: !Ref CodeBucket
+        S3Key: !Ref CodeKey
+      Environment:
+        Variables:
+          DRIFTGATE_RUN_BUCKET: !Ref RunBucketName
+          DRIFTGATE_BRANCH: !Ref Branch
+          DRIFTGATE_CODEDEPLOY_APPLICATION: !Ref CodeDeployApplication
+          DRIFTGATE_CODEDEPLOY_GROUP: !Ref CodeDeployGroup
+
+  # The one-time token in the link is the authentication; the URL itself is public.
+  ApprovalFunctionUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      AuthType: NONE
+      TargetFunctionArn: !Ref ApprovalFunction
+
+  ApprovalFunctionUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunctionUrl
+      FunctionName: !Ref ApprovalFunction
+      FunctionUrlAuthType: NONE
+      Principal: "*"
+
+  ApprovalTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: driftgate-approval
+      KmsMasterKeyId: alias/aws/sns
+
+  ApprovalEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref ApprovalTopic
+      Protocol: email
+      Endpoint: !Ref ApprovalEmail
+
+  ApprovalSweepRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Rejects approvals that passed their deadline (FR-27 timeout)
+      ScheduleExpression: !Ref ApprovalSweepSchedule
+      Targets:
+        - Id: orchestrator
+          Arn: !GetAtt OrchestratorFunction.Arn
 
   PushRule:
     Type: AWS::Events::Rule
@@ -124,6 +193,16 @@ Resources:
       Principal: events.amazonaws.com
       SourceArn: !GetAtt DeployStateRule.Arn
 
+  ApprovalSweepRulePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref OrchestratorFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ApprovalSweepRule.Arn
+
 Outputs:
   OrchestratorFunctionArn:
     Value: !GetAtt OrchestratorFunction.Arn
+  ApprovalUrl:
+    Value: !GetAtt ApprovalFunctionUrl.FunctionUrl
