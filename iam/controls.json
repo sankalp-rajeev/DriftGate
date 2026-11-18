@@ -1,0 +1,136 @@
+{
+  "description": "NFR-06 least-privilege controls. status is 'enforced' (applied to a real resource in the Lab) or 'documented-only' (written policy; the Lab runs the principal as LabRole because role creation is denied). applied_in names the file that applies an enforced control, or null if no task applies it yet.",
+  "placeholders": {
+    "AccountId": "Lab account id",
+    "Region": "us-east-1 (NFR-08)",
+    "ArtifactBucket": "S3 bucket for models, reference logits, bundles, build logs and run records",
+    "OrchestratorFunction": "Lambda orchestrator function name (T-25)",
+    "ApprovalFunction": "Approval handler function name (T-26)",
+    "ApprovalTopic": "SNS approval topic name (T-26)",
+    "RulePrefix": "Name prefix shared by the pipeline's EventBridge rules (T-25)",
+    "CodeDeployApp": "CodeDeploy application name (T-12)",
+    "DeploymentGroup": "CodeDeploy deployment group name (T-12)",
+    "TargetGroup": "ALB target group name (T-12)",
+    "Repository": "CodeCommit repository name",
+    "MetricNamespace": "CloudWatch namespace of the gate metric (T-13)"
+  },
+  "controls": [
+    {
+      "id": "iam-orchestrator",
+      "service": "Lambda orchestrator",
+      "kind": "identity-policy",
+      "policy": "orchestrator-lambda.json",
+      "status": "documented-only",
+      "applied_in": null,
+      "lab_reality": "Runs as LabRole"
+    },
+    {
+      "id": "iam-approval",
+      "service": "Lambda approval handler",
+      "kind": "identity-policy",
+      "policy": "approval-lambda.json",
+      "status": "documented-only",
+      "applied_in": null,
+      "lab_reality": "Runs as LabRole"
+    },
+    {
+      "id": "iam-build-host",
+      "service": "EC2 build host",
+      "kind": "identity-policy",
+      "policy": "build-host-ec2.json",
+      "status": "documented-only",
+      "applied_in": null,
+      "lab_reality": "Uses LabInstanceProfile"
+    },
+    {
+      "id": "iam-serving",
+      "service": "EC2 serving instances",
+      "kind": "identity-policy",
+      "policy": "serving-ec2.json",
+      "status": "documented-only",
+      "applied_in": null,
+      "lab_reality": "Uses LabInstanceProfile"
+    },
+    {
+      "id": "iam-codedeploy",
+      "service": "CodeDeploy service role",
+      "kind": "identity-policy",
+      "policy": "codedeploy-service.json",
+      "status": "documented-only",
+      "applied_in": null,
+      "lab_reality": "LabRole is the service role (FR-17)"
+    },
+    {
+      "id": "lambda-resource-orchestrator",
+      "service": "Lambda orchestrator",
+      "kind": "resource-policy",
+      "policy": "lambda-resource-orchestrator.json",
+      "status": "enforced",
+      "applied_in": null,
+      "lab_reality": "Only the pipeline's EventBridge rules may invoke the orchestrator"
+    },
+    {
+      "id": "lambda-resource-approval-url",
+      "service": "Lambda approval handler",
+      "kind": "resource-policy",
+      "policy": "lambda-resource-approval-url.json",
+      "status": "enforced",
+      "applied_in": null,
+      "lab_reality": "Only the function URL may invoke the approval handler; the one-time token (FR-27) authorizes the request"
+    },
+    {
+      "id": "s3-bucket-policy",
+      "service": "S3 artifact bucket",
+      "kind": "resource-policy",
+      "policy": "s3-bucket-policy.json",
+      "status": "enforced",
+      "applied_in": null,
+      "lab_reality": "Account-only, TLS-only, encrypted puts only"
+    },
+    {
+      "id": "sg-alb",
+      "service": "ALB",
+      "kind": "security-group",
+      "policy": null,
+      "status": "enforced",
+      "applied_in": "deploy/cloudformation/network.yaml",
+      "lab_reality": "Ingress TCP 80 and 443 only"
+    },
+    {
+      "id": "sg-serving",
+      "service": "EC2 serving instances",
+      "kind": "security-group",
+      "policy": null,
+      "status": "enforced",
+      "applied_in": "deploy/cloudformation/network.yaml",
+      "lab_reality": "Ingress only from the ALB security group on the serving port"
+    },
+    {
+      "id": "sg-build-host",
+      "service": "EC2 build host",
+      "kind": "security-group",
+      "policy": null,
+      "status": "enforced",
+      "applied_in": "deploy/cloudformation/network.yaml",
+      "lab_reality": "No inbound rules"
+    },
+    {
+      "id": "ssm-not-ssh",
+      "service": "EC2 (all)",
+      "kind": "access-path",
+      "policy": null,
+      "status": "enforced",
+      "applied_in": "deploy/cloudformation/network.yaml",
+      "lab_reality": "No port 22 in any security group, no key pair in launch templates; shell via Session Manager"
+    },
+    {
+      "id": "imdsv2",
+      "service": "EC2 (all)",
+      "kind": "instance-metadata",
+      "policy": null,
+      "status": "enforced",
+      "applied_in": "deploy/cloudformation/network.yaml",
+      "lab_reality": "Launch templates set HttpTokens required, hop limit 1"
+    }
+  ]
+}
