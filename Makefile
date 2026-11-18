@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup test lint fmt up down
+.PHONY: help setup test lint fmt up down orchestrator-zip
 
 # Keep the project venv isolated from any PYTHONPATH set by the shell (e.g. a sourced ROS setup).
 unexport PYTHONPATH
@@ -25,6 +25,9 @@ lint: ## Run ruff (lint and format check)
 
 fmt: ## Auto-format
 	uv run ruff format . && uv run ruff check --fix .
+
+orchestrator-zip: ## Package the orchestrator Lambda (committed HEAD) to artifacts/orchestrator.zip
+	mkdir -p artifacts && git archive --format=zip -o artifacts/orchestrator.zip HEAD orchestrator/
 
 up: ## Create or update the per-session network stack (calls AWS; Lab only)
 	aws cloudformation deploy --region $(AWS_REGION) --stack-name $(STACK_NAME) --template-file $(CFN_DIR)/network.yaml --parameter-overrides file://$(CFN_DIR)/network-params.json --tags Project=driftgate --no-fail-on-empty-changeset

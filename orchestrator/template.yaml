@@ -1,0 +1,129 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  DriftGate orchestrator (FR-15, ADR-007). Lambda orchestrator running as LabRole plus the
+  EventBridge rules that drive it: CodeCommit push to the branch, SSM command status (build
+  host) and CodeDeploy deployment state. Deployed by the human in the Learner Lab.
+
+Parameters:
+  LabRoleArn:
+    Type: String
+    Description: ARN of the pre-created LabRole (execution role; role creation is denied in the Lab)
+  RepositoryName:
+    Type: String
+    Default: driftgate
+  Branch:
+    Type: String
+    Default: main
+  RunBucketName:
+    Type: String
+    Description: S3 bucket for run records, build logs and bundles
+  BuildInstanceId:
+    Type: String
+    Description: Instance id of the EC2 build host registered with Systems Manager
+  CodeDeployApplication:
+    Type: String
+    Default: driftgate
+  CodeDeployGroup:
+    Type: String
+    Default: driftgate-serving
+  CodeBucket:
+    Type: String
+    Description: S3 bucket holding the orchestrator Lambda zip (make orchestrator-zip)
+  CodeKey:
+    Type: String
+    Default: lambda/orchestrator.zip
+
+Resources:
+  OrchestratorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: driftgate-orchestrator
+      Runtime: python3.12
+      Handler: orchestrator.handler.lambda_handler
+      Role: !Ref LabRoleArn
+      Timeout: 30
+      MemorySize: 256
+      Code:
+        S3Bucket: !Ref CodeBucket
+        S3Key: !Ref CodeKey
+      Environment:
+        Variables:
+          DRIFTGATE_RUN_BUCKET: !Ref RunBucketName
+          DRIFTGATE_BRANCH: !Ref Branch
+          DRIFTGATE_BUILD_INSTANCE_IDS: !Ref BuildInstanceId
+          DRIFTGATE_CODEDEPLOY_APPLICATION: !Ref CodeDeployApplication
+          DRIFTGATE_CODEDEPLOY_GROUP: !Ref CodeDeployGroup
+
+  PushRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: CodeCommit push to the release branch starts a DriftGate run
+      EventPattern:
+        source: [aws.codecommit]
+        detail-type: [CodeCommit Repository State Change]
+        resources:
+          - !Sub arn:${AWS::Partition}:codecommit:${AWS::Region}:${AWS::AccountId}:${RepositoryName}
+        detail:
+          event: [referenceCreated, referenceUpdated]
+          referenceType: [branch]
+          referenceName: [!Ref Branch]
+      Targets:
+        - Id: orchestrator
+          Arn: !GetAtt OrchestratorFunction.Arn
+
+  BuildStatusRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Terminal SSM Run Command status from the build host returns control
+      EventPattern:
+        source: [aws.ssm]
+        detail-type: [EC2 Command Status-change Notification]
+        detail:
+          document-name: [AWS-RunShellScript]
+          status: [Success, Failed, TimedOut, Cancelled]
+      Targets:
+        - Id: orchestrator
+          Arn: !GetAtt OrchestratorFunction.Arn
+
+  DeployStateRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Terminal CodeDeploy deployment state finishes the run
+      EventPattern:
+        source: [aws.codedeploy]
+        detail-type: [CodeDeploy Deployment State-change Notification]
+        detail:
+          application: [!Ref CodeDeployApplication]
+          state: [SUCCESS, FAILURE, STOP]
+      Targets:
+        - Id: orchestrator
+          Arn: !GetAtt OrchestratorFunction.Arn
+
+  # Lambda resource policy: each rule may invoke the function, nothing else (NFR-06).
+  PushRulePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref OrchestratorFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt PushRule.Arn
+
+  BuildStatusRulePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref OrchestratorFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt BuildStatusRule.Arn
+
+  DeployStateRulePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref OrchestratorFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt DeployStateRule.Arn
+
+Outputs:
+  OrchestratorFunctionArn:
+    Value: !GetAtt OrchestratorFunction.Arn
