@@ -71,3 +71,44 @@ def test_manifest_step_passes_then_fails_on_hash_mismatch(tmp_path):
     build = json.loads((tmp_path / "bad" / "build.json").read_text())
     assert build["failed_step"] == "manifest"
     assert [s["name"] for s in build["steps"]] == ["commit", "manifest"]  # d1 never ran
+
+
+def _clean_env():
+    return {k: v for k, v in os.environ.items() if not k.startswith("DRIFTGATE_")}
+
+
+def test_package_writes_codedeploy_bundle_with_appspec_at_root(tmp_path):
+    import zipfile
+
+    env = _clean_env() | {"DRIFTGATE_BUILD_STEPS": "package"}
+    res = subprocess.run(
+        [str(BUILD), "--commit", HEAD, "--run-id", "r4", "--out", str(tmp_path)],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=300,
+    )
+    assert res.returncode == 0, res.stderr
+    bundle = tmp_path / "bundles" / f"{HEAD}.zip"  # same key as s3://<bucket>/bundles/<commit>.zip
+    with zipfile.ZipFile(bundle) as z:
+        names = z.namelist()
+        assert z.read("appspec.yml") == Path("deploy/appspec.yml").read_bytes()
+    assert "deploy/hooks/validate_service.sh" in names
+    assert "gate/cli.py" in names
+    build = json.loads((tmp_path / "build.json").read_text())
+    assert [s["name"] for s in build["steps"]] == ["commit", "package"]  # no upload by default
+
+
+def test_upload_is_off_by_default_and_needs_a_bucket(tmp_path):
+    env = _clean_env() | {"DRIFTGATE_BUILD_STEPS": "", "PATH": "/usr/bin:/bin"}
+    res = subprocess.run(
+        [str(BUILD), "--commit", HEAD, "--run-id", "r5", "--out", str(tmp_path), "--upload"],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=60,
+    )
+    assert res.returncode == 1
+    build = json.loads((tmp_path / "build.json").read_text())
+    assert build["failed_step"] == "upload"
+    assert "needs DRIFTGATE_BUNDLE_BUCKET" in res.stderr
