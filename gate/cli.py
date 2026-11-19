@@ -23,9 +23,10 @@ import operator
 import os
 import sys
 import time
+from contextlib import nullcontext
 from pathlib import Path
 
-from gate import d3, d5, d6
+from gate import d3, d5, d6, telemetry
 from gate.llama_client import LlamaServer
 from gate.manifest import load_yaml
 
@@ -36,6 +37,7 @@ DEFAULT_GATE_CONFIG = Path("gate/config.yaml")
 DEFAULT_SERVING_CONFIG = Path("serving/config.yaml")
 FORCE_FAIL_ENV = "DRIFTGATE_FORCE_FAIL"
 EXIT_PASS, EXIT_FAIL, EXIT_ERROR = 0, 1, 2
+RUN_ID_ENV = "DRIFTGATE_RUN_ID"
 OPS = {">=": operator.ge, "<=": operator.le, ">": operator.gt, "<": operator.lt}
 
 
@@ -45,6 +47,11 @@ def _sha256(path: Path) -> str:
 
 def _jsonl(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text().splitlines() if line]
+
+
+def _span(tel, detector: str):
+    """FR-24 detector span, or a no-op when no telemetry is passed."""
+    return nullcontext() if tel is None else tel.detector(detector)
 
 
 def server_url(serving_config: dict) -> str:
@@ -61,6 +68,7 @@ def measure(
     prompts_path: Path,
     panel_path: Path,
     config_path: Path | None = None,
+    tel=None,
 ) -> dict:
     prompts = _jsonl(prompts_path)
     panel = _jsonl(panel_path)
@@ -70,9 +78,11 @@ def measure(
         )
     props = server.props()
     t0 = time.monotonic()
-    d3_run = d3.measure(server, prompts[:budget], seed)
+    with _span(tel, "D3"):
+        d3_run = d3.measure(server, prompts[:budget], seed)
     t1 = time.monotonic()
-    d5_run = d5.measure(server, panel[:budget], seed)
+    with _span(tel, "D5"):
+        d5_run = d5.measure(server, panel[:budget], seed)
     t2 = time.monotonic()
     return {
         "schema": MEASUREMENT_SCHEMA,
@@ -121,13 +131,15 @@ def _meta(m: dict) -> dict:
     return {k: m[k] for k in ("budget", "server", "inputs", "wall_clock_s")}
 
 
-def detectors(reference: dict, candidate: dict) -> dict:
+def detectors(reference: dict, candidate: dict, tel=None) -> dict:
     _check_pair(reference, candidate)
-    return {
+    out = {
         "D3": d3.metrics(reference["d3"], candidate["d3"]),
         "D5": d5.metrics(reference["d5"], candidate["d5"]),
-        "D6": d6.metrics(reference["d3"], candidate["d3"]),
     }
+    with _span(tel, "D6"):  # D6 has no measurement of its own: latency from the D3 run
+        out["D6"] = d6.metrics(reference["d3"], candidate["d3"])
+    return out
 
 
 # ---------- decision ----------
@@ -180,9 +192,9 @@ def decide(dets: dict, mode: str, thresholds_path: Path, env=None) -> dict:
     }
 
 
-def verdict(reference: dict, candidate: dict, gate_config: dict, env=None) -> dict:
+def verdict(reference: dict, candidate: dict, gate_config: dict, env=None, tel=None) -> dict:
     t0 = time.monotonic()
-    dets = detectors(reference, candidate)
+    dets = detectors(reference, candidate, tel)
     decision = decide(dets, gate_config["mode"], Path(gate_config["thresholds"]), env)
     return {
         "schema": VERDICT_SCHEMA,
@@ -229,8 +241,21 @@ def _parser() -> argparse.ArgumentParser:
     return p
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, tel=None) -> int:
     args = _parser().parse_args(argv)
+    tel = tel or telemetry.from_env()
+    run_id = os.environ.get(RUN_ID_ENV, "local")
+    try:
+        with tel.run(
+            run_id, name=f"gate.cli.{args.cmd}", **{"driftgate.gate.cmd": args.cmd}
+        ) as span:
+            code = _main(args, tel, span, run_id)
+    finally:
+        tel.shutdown()
+    return code
+
+
+def _main(args, tel, span, run_id: str) -> int:
     try:
         gate_config = load_yaml(args.gate_config)
         if args.cmd in ("measure", "run"):
@@ -242,7 +267,10 @@ def main(argv: list[str] | None = None) -> int:
                 Path(gate_config["data"]["d3_prompts"]),
                 Path(gate_config["data"]["d5_panel"]),
                 args.config,
+                tel,
             )
+            if m["server"]["model_path"]:
+                span.set_attribute("gen_ai.request.model", Path(m["server"]["model_path"]).name)
             if args.cmd == "measure":
                 _write(m, args.out)
                 return EXIT_PASS
@@ -252,9 +280,12 @@ def main(argv: list[str] | None = None) -> int:
         else:
             candidate = json.loads(args.candidate.read_text())
         ref_path = args.reference or Path(gate_config["reference"])
-        v = verdict(json.loads(ref_path.read_text()), candidate, gate_config)
+        v = verdict(json.loads(ref_path.read_text()), candidate, gate_config, tel=tel)
     except (OSError, ValueError, KeyError) as e:
         sys.stderr.write(f"gate: {type(e).__name__}: {e}\n")
+        span.set_attribute("process.exit.code", EXIT_ERROR)
         return EXIT_ERROR
+    tel.record_verdict(v, run_id)
+    span.set_attribute("process.exit.code", v["decision"]["exit_code"])
     _write(v, args.out)
     return v["decision"]["exit_code"]

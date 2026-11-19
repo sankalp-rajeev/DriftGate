@@ -18,6 +18,8 @@
 # DRIFTGATE_BUILD_STEPS (default "tests manifest d1 d2 package") selects steps, for local use
 # and tests.
 # DRIFTGATE_MANIFEST (default serving/manifest.json) is the manifest the FR-02 step checks.
+# D1 and D2 run inside `gate.telemetry span` (FR-24): a no-op unless DRIFTGATE_TELEMETRY=1, then
+# a gate.D1 / gate.D2 span under TRACEPARENT, if set (laptop runs with the local collector).
 set -uo pipefail
 
 usage() {
@@ -95,8 +97,10 @@ for step in $STEPS; do
     tests) run_step tests "$OUT/tests.log" uv run pytest -q ;;
     manifest) run_step manifest "$OUT/manifest.json" \
       uv run python -m gate.manifest verify --config "$CONFIG" --manifest "$MANIFEST" ;;
-    d1) run_step d1 "$OUT/d1.json" uv run python -m gate.d1 --config "$CONFIG" --report-dir "$OUT" ;;
-    d2) run_step d2 "$OUT/d2.json" uv run python -m gate.d2 run --config "$CONFIG" ;;
+    d1) run_step d1 "$OUT/d1.json" uv run python -m gate.telemetry span D1 -- \
+      uv run python -m gate.d1 --config "$CONFIG" --report-dir "$OUT" ;;
+    d2) run_step d2 "$OUT/d2.json" uv run python -m gate.telemetry span D2 -- \
+      uv run python -m gate.d2 run --config "$CONFIG" ;;
     package) run_step package "$OUT/package.json" \
       uv run python deploy/package_bundle.py --commit "$COMMIT" --out "$OUT" ;;
     *) echo "unknown step $step" >&2; record "$step" 2 0 "" ;;
