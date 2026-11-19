@@ -17,9 +17,6 @@ Parameters:
   RunBucketName:
     Type: String
     Description: S3 bucket for run records, build logs and bundles
-  BuildInstanceId:
-    Type: String
-    Description: Instance id of the EC2 build host registered with Systems Manager
   CodeDeployApplication:
     Type: String
     Default: driftgate
@@ -32,6 +29,16 @@ Parameters:
   CodeKey:
     Type: String
     Default: lambda/orchestrator.zip
+  ReferenceKey:
+    Type: String
+    Default: ""
+    Description: >-
+      Reference key (reference/<model-sha256>/<config-hash>/<instance-type>/) checked before
+      each build; empty disables the automatic `gate reference` run (owner decision pending)
+  ReferenceRevision:
+    Type: String
+    Default: ""
+    Description: Git revision checked out for the automatic reference run
   ApprovalEmail:
     Type: String
     Description: Address that receives approval emails (confirm the SNS subscription once)
@@ -59,9 +66,10 @@ Resources:
         Variables:
           DRIFTGATE_RUN_BUCKET: !Ref RunBucketName
           DRIFTGATE_BRANCH: !Ref Branch
-          DRIFTGATE_BUILD_INSTANCE_IDS: !Ref BuildInstanceId
           DRIFTGATE_CODEDEPLOY_APPLICATION: !Ref CodeDeployApplication
           DRIFTGATE_CODEDEPLOY_GROUP: !Ref CodeDeployGroup
+          DRIFTGATE_GATE_REFERENCE_KEY: !Ref ReferenceKey
+          DRIFTGATE_GATE_REFERENCE_REVISION: !Ref ReferenceRevision
           DRIFTGATE_APPROVAL_TOPIC_ARN: !Ref ApprovalTopic
           DRIFTGATE_APPROVAL_URL: !GetAtt ApprovalFunctionUrl.FunctionUrl
 
@@ -117,7 +125,9 @@ Resources:
   ApprovalSweepRule:
     Type: AWS::Events::Rule
     Properties:
-      Description: Rejects approvals that passed their deadline (FR-27 timeout)
+      Description: >-
+        Rejects approvals past their deadline (FR-27), re-checks SSM online status for a
+        build waiting on the build host, and stops the host when idle over 30 minutes
       ScheduleExpression: !Ref ApprovalSweepSchedule
       Targets:
         - Id: orchestrator
@@ -154,6 +164,22 @@ Resources:
         - Id: orchestrator
           Arn: !GetAtt OrchestratorFunction.Arn
 
+  # Build host start/stop (PRD 6.8): the orchestrator finds the host by its Role=build-host
+  # tag; it needs the EC2 "running" event (plus SSM online status) before sending the build,
+  # and "stopped" when it had to wait for a stopping host. Other instances are ignored.
+  BuildHostStateRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: EC2 state changes (the orchestrator acts only on the build host)
+      EventPattern:
+        source: [aws.ec2]
+        detail-type: [EC2 Instance State-change Notification]
+        detail:
+          state: [running, stopped]
+      Targets:
+        - Id: orchestrator
+          Arn: !GetAtt OrchestratorFunction.Arn
+
   DeployStateRule:
     Type: AWS::Events::Rule
     Properties:
@@ -184,6 +210,14 @@ Resources:
       FunctionName: !Ref OrchestratorFunction
       Principal: events.amazonaws.com
       SourceArn: !GetAtt BuildStatusRule.Arn
+
+  BuildHostStateRulePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref OrchestratorFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt BuildHostStateRule.Arn
 
   DeployStateRulePermission:
     Type: AWS::Lambda::Permission

@@ -13,7 +13,6 @@ import pytest
 from orchestrator_helpers import (
     BUCKET,
     COMMIT,
-    INSTANCE,
     REGION,
     approve_latest,
     build_succeeds,
@@ -50,7 +49,7 @@ def test_build_command_targets_build_host_with_commit(pipeline):
     rec = read_record(pipeline["s3"], out["run_id"])
     ssm = boto3.client("ssm", region_name=REGION)
     cmd = ssm.list_commands(CommandId=stage(rec, "build")["details"]["command_id"])["Commands"][0]
-    assert cmd["InstanceIds"] == [INSTANCE]
+    assert cmd["InstanceIds"] == [pipeline["host_id"]]
     assert cmd["DocumentName"] == "AWS-RunShellScript"
     assert any(COMMIT in c for c in cmd["Parameters"]["commands"])
     assert cmd["OutputS3BucketName"] == BUCKET
@@ -224,7 +223,7 @@ def test_template_wires_eventbridge_rules_to_orchestrator():
         if "EventPattern" in v["Properties"]
     }
     sources = sorted(p["source"][0] for p in patterns.values())
-    assert sources == ["aws.codecommit", "aws.codedeploy", "aws.ssm"]
+    assert sources == ["aws.codecommit", "aws.codedeploy", "aws.ec2", "aws.ssm"]
     push = next(p for p in patterns.values() if p["source"] == ["aws.codecommit"])
     assert push["detail"]["referenceType"] == ["branch"]
     # One Lambda permission per rule, each scoped to that rule's ARN (NFR-06).
