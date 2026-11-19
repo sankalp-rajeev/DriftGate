@@ -21,4 +21,10 @@ make up     # aws cloudformation deploy ... (Lab session only)
 make down   # aws cloudformation delete-stack ... && wait stack-delete-complete
 ```
 
-`make lint` runs `cfn-lint` on every template here. `tests/test_fr21_network_stack.py` checks the security properties offline for both values of `UseNat`.
+## `storage.yaml`: persistent storage stack, `driftgate-storage` (`make storage-up` / `make storage-down`)
+
+One S3 bucket for models (`models/`), reference logits (`reference/`), bundles (`bundles/`), build logs (`build-logs/`) and run records (`runs/`), named `<BucketNamePrefix>-<account id>-<region>` (default prefix `driftgate-artifacts`). It has versioning, SSE-S3 (AES256) by default, all four Block Public Access settings, ACLs disabled (`BucketOwnerEnforced`), and the bucket policy from `iam/s3-bucket-policy.json`: account-only, TLS-only, and `PutObject` denied unless it sends an `x-amz-server-side-encryption` header, so uploads must pass `--sse AES256` or the SDK equivalent. The name is exported as `driftgate-storage-BucketName`; pass it as `RunBucketName` to the orchestrator template and to the build host.
+
+The stack is created once and kept across Lab sessions. `make down` never deletes it. `make storage-down` belongs to the final teardown (NFR-09). CloudFormation can't delete a bucket that still holds objects, so delete every object version first.
+
+`make lint` runs `cfn-lint` on every template here. `tests/test_fr21_network_stack.py` checks the network stack offline for both values of `UseNat`; `tests/test_nfr05_storage_stack.py` checks the storage stack.
