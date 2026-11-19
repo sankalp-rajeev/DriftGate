@@ -29,6 +29,7 @@ STATUS_BY_RESULT = {
     "not_pending": 409,
     "bad_token": 403,
     "bad_decision": 400,
+    "deploy_rejected": 503,
 }
 
 MESSAGES = {
@@ -39,6 +40,7 @@ MESSAGES = {
     "not_pending": "This run is not waiting for approval (already decided or timed out).",
     "bad_token": "Invalid or already used link.",
     "bad_decision": "Unknown decision.",
+    "deploy_rejected": "Approved, but CodeDeploy refused the deployment; the run has ended.",
 }
 
 
