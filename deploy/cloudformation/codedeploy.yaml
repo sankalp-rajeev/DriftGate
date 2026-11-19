@@ -3,8 +3,9 @@ Description: >-
   DriftGate CodeDeploy stack (FR-17, FR-18, ADR-002). CodeDeploy application and EC2 deployment
   group (in-place, OneAtATime, LabRole as service role) behind the serving target group of the
   network stack, which the group refers to by name, plus the two serving instances launched from
-  the network stack's launch template. Per session, created after the network stack. Rollback on
-  alarm and the gate metric are T-13.
+  the network stack's launch template. Per session, created after the network stack. T-13 adds
+  the GateScore rollback alarm (FR-19, FR-20), a log of CodeDeploy state changes and the
+  CloudWatch dashboard (FR-29).
 
 Parameters:
   NetworkStackName:
@@ -65,10 +66,162 @@ Resources:
               - Key: Project
                 Value: !Ref ProjectTag
                 Type: KEY_AND_VALUE
+      # FR-19: roll back on a failed hook (ValidateService exits non-zero) and when the
+      # GateScore alarm stops the deployment.
       AutoRollbackConfiguration:
         Enabled: true
         Events:
           - DEPLOYMENT_FAILURE
+          - DEPLOYMENT_STOP_ON_ALARM
+      AlarmConfiguration:
+        Enabled: true
+        IgnorePollAlarmFailure: false
+        Alarms:
+          - Name: !Ref GateScoreAlarm
+
+  # FR-20 / PRD 6.8: GateScore (published by ValidateService in enforce mode) above 1 for one
+  # datapoint stops the deployment and rolls it back.
+  GateScoreAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${DeploymentGroupName}-gate-score"
+      AlarmDescription: DriftGate gate score above 1 (a detector over its calibrated threshold)
+      Namespace: DriftGate
+      MetricName: GateScore
+      Dimensions:
+        - Name: DeploymentGroup
+          Value: !Ref DeploymentGroupName
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  # FR-29 deployment status: CodeDeploy state-change events into a log group the dashboard
+  # queries. EventBridge writes to it under the log group resource policy below (no new role).
+  DeploymentEventsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/events/${ApplicationName}-deployments"
+      RetentionInDays: 7
+
+  DeploymentEventsLogPolicy:
+    Type: AWS::Logs::ResourcePolicy
+    Properties:
+      PolicyName: !Sub "${ApplicationName}-deployment-events"
+      PolicyDocument: !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [{
+            "Effect": "Allow",
+            "Principal": {"Service": ["events.amazonaws.com", "delivery.logs.amazonaws.com"]},
+            "Action": ["logs:CreateLogStream", "logs:PutLogEvents"],
+            "Resource": "${DeploymentEventsLogGroup.Arn}"
+          }]
+        }
+
+  DeploymentEventsRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: CodeDeploy deployment and instance state changes for the dashboard
+      EventPattern:
+        source: [aws.codedeploy]
+        detail-type:
+          - CodeDeploy Deployment State-change Notification
+          - CodeDeploy Instance State-change Notification
+        detail:
+          application: [!Ref ApplicationName]
+      Targets:
+        - Id: deployment-log
+          Arn: !GetAtt DeploymentEventsLogGroup.Arn
+
+  # FR-29: gate score, alarm state, ALB target health and deployment status. The body is
+  # observability/cloudwatch-dashboard.json (kept identical by tests/test_fr29_dashboard.py).
+  Dashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Ref ApplicationName
+      DashboardBody: !Sub
+        - |
+            {
+              "widgets": [
+                {
+                  "type": "metric", "x": 0, "y": 0, "width": 12, "height": 6,
+                  "properties": {
+                    "title": "Gate score (fail above 1; enforce mode only)",
+                    "region": "${AWS::Region}",
+                    "view": "timeSeries",
+                    "stat": "Maximum",
+                    "period": 60,
+                    "metrics": [["DriftGate", "GateScore", "DeploymentGroup", "${DeploymentGroupName}"]],
+                    "annotations": {"horizontal": [{"label": "rollback above 1", "value": 1}]},
+                    "yAxis": {"left": {"min": 0}}
+                  }
+                },
+                {
+                  "type": "alarm", "x": 12, "y": 0, "width": 12, "height": 6,
+                  "properties": {
+                    "title": "Rollback alarm state",
+                    "alarms": ["${GateScoreAlarmArn}"]
+                  }
+                },
+                {
+                  "type": "metric", "x": 0, "y": 6, "width": 12, "height": 6,
+                  "properties": {
+                    "title": "ALB target health (serving target group)",
+                    "region": "${AWS::Region}",
+                    "view": "timeSeries",
+                    "period": 60,
+                    "metrics": [
+                      ["AWS/ApplicationELB", "HealthyHostCount", "TargetGroup", "${TargetGroupFullName}", "LoadBalancer", "${LoadBalancerFullName}", {"stat": "Minimum"}],
+                      ["AWS/ApplicationELB", "UnHealthyHostCount", "TargetGroup", "${TargetGroupFullName}", "LoadBalancer", "${LoadBalancerFullName}", {"stat": "Maximum"}]
+                    ],
+                    "yAxis": {"left": {"min": 0}}
+                  }
+                },
+                {
+                  "type": "log", "x": 12, "y": 6, "width": 12, "height": 6,
+                  "properties": {
+                    "title": "Deployment status (CodeDeploy state changes)",
+                    "region": "${AWS::Region}",
+                    "view": "table",
+                    "query": "SOURCE '${DeploymentEventsLogGroup}' | fields @timestamp, detail.deploymentId, detail.state, detail.instanceGroupId | sort @timestamp desc | limit 20"
+                  }
+                },
+                {
+                  "type": "metric", "x": 0, "y": 12, "width": 24, "height": 6,
+                  "properties": {
+                    "title": "Raw detector values (always published)",
+                    "region": "${AWS::Region}",
+                    "view": "timeSeries",
+                    "stat": "Maximum",
+                    "period": 60,
+                    "metrics": [
+                      ["DriftGate", "D3MeanAgreementShare", "DeploymentGroup", "${DeploymentGroupName}"],
+                      ["DriftGate", "D3P95ApproxKL", "DeploymentGroup", "${DeploymentGroupName}"],
+                      ["DriftGate", "D5DeltaAccuracy", "DeploymentGroup", "${DeploymentGroupName}"],
+                      ["DriftGate", "D6TtftRatio", "DeploymentGroup", "${DeploymentGroupName}"],
+                      ["DriftGate", "D6ItlRatio", "DeploymentGroup", "${DeploymentGroupName}"]
+                    ]
+                  }
+                }
+              ]
+            }
+        - DeploymentGroupName: !Ref DeploymentGroupName
+          GateScoreAlarmArn: !GetAtt GateScoreAlarm.Arn
+          DeploymentEventsLogGroup: !Ref DeploymentEventsLogGroup
+          TargetGroupFullName: !Select
+            - 5
+            - !Split
+              - ":"
+              - Fn::ImportValue: !Sub "${NetworkStackName}-TargetGroupArn"
+          LoadBalancerFullName: !Select
+            - 1
+            - !Split
+              - "loadbalancer/"
+              - Fn::ImportValue: !Sub "${NetworkStackName}-AlbArn"
 
   ServingInstanceA:
     Type: AWS::EC2::Instance
@@ -145,3 +298,7 @@ Outputs:
     Value: !Ref DeploymentGroup
   ServingInstanceIds:
     Value: !Join [",", [!Ref ServingInstanceA, !Ref ServingInstanceB]]
+  GateScoreAlarmName:
+    Value: !Ref GateScoreAlarm
+  DashboardName:
+    Value: !Ref Dashboard

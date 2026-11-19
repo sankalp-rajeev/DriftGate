@@ -18,18 +18,23 @@ DEFAULT_CONFIG_PATH = Path(__file__).with_name("config.json")
 ENV_OVERRIDES: dict[str, tuple[str | None, str]] = {
     "DRIFTGATE_RUN_BUCKET": (None, "run_bucket"),
     "DRIFTGATE_BRANCH": (None, "branch"),
-    "DRIFTGATE_BUILD_INSTANCE_IDS": ("build", "instance_ids"),
     "DRIFTGATE_CODEDEPLOY_APPLICATION": ("deploy", "application_name"),
     "DRIFTGATE_CODEDEPLOY_GROUP": ("deploy", "deployment_group_name"),
     "DRIFTGATE_BUNDLE_BUCKET": ("deploy", "bundle_bucket"),
     "DRIFTGATE_APPROVAL_TOPIC_ARN": ("approval", "topic_arn"),
     "DRIFTGATE_APPROVAL_URL": ("approval", "function_url"),
+    "DRIFTGATE_GATE_REFERENCE_KEY": ("reference", "key"),
+    "DRIFTGATE_GATE_REFERENCE_REVISION": ("reference", "revision"),
 }
 
 
 @dataclass(frozen=True)
 class BuildConfig:
-    instance_ids: list[str]
+    # The build host is found by this tag (PRD 6.8: Role=build-host), started at the build
+    # stage if stopped, stopped when the build ends, and stopped by the sweep when idle longer
+    # than host_idle_stop_seconds (PRD 6.8: 30 minutes).
+    host_tag: dict[str, str]
+    host_idle_stop_seconds: int
     document: str
     working_directory: str
     commands: list[str]
@@ -42,6 +47,19 @@ class DeployConfig:
     bundle_bucket: str
     bundle_key: str
     bundle_type: str
+
+
+@dataclass(frozen=True)
+class ReferenceConfig:
+    # PRD 6.8 automatic reference run. `key` is an explicit input: the reference key the
+    # gate compares candidates against (reference/<model-sha256>/<config-hash>/<instance-type>/).
+    # How candidates get the reference revision's key is an open owner decision (pin it in
+    # gate/config.yaml or pass --reference-key), so the orchestrator never derives it; empty
+    # `key` or `revision` disables the automatic reference run.
+    key: str
+    # Git revision (commit, branch or tag) that is the reference; checked out for the run.
+    revision: str
+    commands: list[str]
 
 
 @dataclass(frozen=True)
@@ -59,9 +77,12 @@ class Config:
     branch: str
     run_bucket: str
     run_prefix: str
+    # PRD 6.8: runs/active.json expires 2 h after it is taken; an expired lock is stale.
+    lock_ttl_seconds: int
     build: BuildConfig
     deploy: DeployConfig
     approval: ApprovalConfig
+    reference: ReferenceConfig
     raw: dict[str, Any]
 
 
@@ -73,9 +94,7 @@ def load_config(path: str | os.PathLike | None = None) -> Config:
         if not value:
             continue
         target = raw if section is None else raw.setdefault(section, {})
-        target[key] = (
-            [v.strip() for v in value.split(",") if v.strip()] if key.endswith("_ids") else value
-        )
+        target[key] = value
     deploy = dict(raw["deploy"])
     deploy["bundle_bucket"] = deploy.get("bundle_bucket") or raw["run_bucket"]
     return Config(
@@ -83,6 +102,7 @@ def load_config(path: str | os.PathLike | None = None) -> Config:
         branch=raw["branch"],
         run_bucket=raw["run_bucket"],
         run_prefix=raw["run_prefix"],
+        lock_ttl_seconds=int(raw["lock_ttl_seconds"]),
         build=BuildConfig(**raw["build"]),
         deploy=DeployConfig(**deploy),
         approval=ApprovalConfig(
@@ -90,5 +110,6 @@ def load_config(path: str | os.PathLike | None = None) -> Config:
             function_url=raw["approval"]["function_url"],
             timeout_seconds=int(raw["approval"]["timeout_seconds"]),
         ),
+        reference=ReferenceConfig(**raw["reference"]),
         raw=raw,
     )

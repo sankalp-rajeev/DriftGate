@@ -17,3 +17,9 @@ make serve    # llama-server from serving/config.yaml (CONFIG=path to use anothe
 ```
 
 `llama-server` is found through `LLAMA_CPP_BIN` (default `~/llama.cpp/build/bin`).
+
+Reference key (PRD Section 6.8): the reference measurement (`make reference SEED=0`) and the D2
+reference logits are stored under `reference/<model-sha256>/<config-hash>/<instance-type>/`.
+`<config-hash>` is the SHA-256 of the effective serving config; `gate/reference.py` defines
+exactly which fields count (host, port and comments do not; template bytes, KV cache, context,
+threads, sampler and the llama.cpp commit do).

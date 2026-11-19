@@ -45,10 +45,29 @@ def test_gate_config_uses_prd_corpus_and_context():
     cfg = load_yaml(Path("gate/config.yaml"))["d2"]
     assert cfg["corpus"] == "gate/data/d2_corpus.txt"
     assert cfg["ctx_size"] == 512
-    assert cfg["base_logits"].startswith("artifacts/reference/")
+    assert cfg["threads"] == 2  # PRD Section 6.8: always 2, on every machine
 
 
-BASE = Path(load_yaml(Path("gate/config.yaml"))["d2"]["base_logits"])
+def test_d2_always_uses_two_threads_whatever_the_serving_config_says():
+    d2cfg = load_yaml(Path("gate/config.yaml"))["d2"]
+    for threads in (-1, 4, 32):
+        cmd = d2._cmd({"threads": threads}, d2cfg, Path("m.gguf"), [])
+        assert cmd[cmd.index("--threads") + 1] == "2"
+
+
+def test_reference_logits_live_under_the_reference_key():
+    gate_cfg = load_yaml(Path("gate/config.yaml"))
+    serving = load_yaml(Path("serving/config.yaml"))
+    path = d2.base_logits_path(gate_cfg, serving, "t3.large", None)
+    key = d2.ref_store.reference_key(serving, "t3.large")
+    assert path == Path(gate_cfg["reference_store"]["local_root"]) / key / "d2_base.kld"
+    pinned = d2.base_logits_path(gate_cfg, serving, None, "reference/a/b/c")
+    assert pinned == Path(gate_cfg["reference_store"]["local_root"]) / "reference/a/b/c/d2_base.kld"
+
+
+BASE = d2.base_logits_path(
+    load_yaml(Path("gate/config.yaml")), load_yaml(Path("serving/config.yaml")), None, None
+)
 BIN = d2.llama_bin_dir() / "llama-perplexity"
 
 

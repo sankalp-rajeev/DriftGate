@@ -17,6 +17,7 @@ NO_RESOURCE_LEVEL = {
     "ssm:UpdateInstanceInformation",
     "ssm:GetCommandInvocation",
     "ssm:ListCommandInvocations",
+    "ssm:DescribeInstanceInformation",
     "ssmmessages:CreateControlChannel",
     "ssmmessages:CreateDataChannel",
     "ssmmessages:OpenControlChannel",
@@ -164,3 +165,27 @@ def test_build_host_send_command_scoped_by_tag():
     assert instance and all(
         "ssm:resourceTag/Role" in s["Condition"]["StringEquals"] for s in instance
     )
+
+
+def test_enforced_means_applied_by_a_file_in_the_repo():
+    for c in CONTROLS["controls"]:
+        if c["status"] == "enforced":
+            assert c["applied_in"], c["id"]
+            assert (ROOT / c["applied_in"]).is_file(), c["id"]
+
+
+def test_bucket_owned_by_storage_stack():
+    (bucket,) = [c for c in CONTROLS["controls"] if c["id"] == "s3-bucket-policy"]
+    assert bucket["applied_in"] == "deploy/cloudformation/storage.yaml"
+
+
+def test_run_record_policies_allow_delete():
+    # orchestrator/run_record.py deletes index entries and releases the runs/active.json lock.
+    for name in ("orchestrator-lambda.json", "approval-lambda.json"):
+        actions = {a for s in statements(IAM / name) for a in as_list(s["Action"])}
+        assert {"s3:GetObject", "s3:PutObject", "s3:DeleteObject"} <= actions, name
+
+
+def test_approval_token_control():
+    (tok,) = [c for c in CONTROLS["controls"] if c["id"] == "approval-token"]
+    assert tok["status"] == "enforced" and "1,800 s" in tok["lab_reality"]

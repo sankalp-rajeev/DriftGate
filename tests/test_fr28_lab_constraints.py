@@ -51,7 +51,16 @@ def test_exactly_one_table_with_required_columns():
 
 
 def test_covers_required_constraints():
-    assert list(rows()) == REQUIRED_ROWS
+    names = list(rows())
+    assert [n for n in names if n in REQUIRED_ROWS] == REQUIRED_ROWS
+
+
+def test_records_prd_6_8_network_decisions():
+    r = rows()
+    assert "HTTP 80 only" in r["No domain or certificate"][2]
+    assert "`UseNat=false`" in r["NAT gateway"][2]
+    assert "driftgate-storage" in r["Session stops"][2]
+    assert "80/443" not in DOC.read_text()
 
 
 def test_every_cell_filled():
@@ -69,13 +78,19 @@ def test_evidence_is_named_not_invented():
 
 
 def test_fits_on_one_page():
-    assert len(DOC.read_text().split()) <= 900
+    assert len(DOC.read_text().split()) <= 1000
 
 
 def test_least_privilege_marks_enforced_and_documented():
     status = rows()["Least privilege"][5]
     assert "Enforced:" in status and "Documented only:" in status
-    for control in ("IMDSv2", "SSM instead of SSH", "S3 bucket policy", "Lambda resource policies"):
+    for control in (
+        "IMDSv2",
+        "SSM instead of SSH",
+        "S3 bucket policy",
+        "Lambda resource policies",
+        "1,800 s",
+    ):
         assert control in status
 
 

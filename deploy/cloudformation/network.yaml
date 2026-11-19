@@ -348,6 +348,10 @@ Resources:
       HealthCheckPath: !Ref HealthCheckPath
       Matcher:
         HttpCode: "200"
+      TargetGroupAttributes:
+        # PRD 6.8: 30 s, so a OneAtATime deploy over two instances stays inside NFR-01.
+        - Key: deregistration_delay.timeout_seconds
+          Value: "30"
       Tags:
         - Key: Name
           Value: !Ref TargetGroupName

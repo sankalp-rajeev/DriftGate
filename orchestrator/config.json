@@ -3,8 +3,10 @@
   "branch": "main",
   "run_bucket": "",
   "run_prefix": "runs/",
+  "lock_ttl_seconds": 7200,
   "build": {
-    "instance_ids": [],
+    "host_tag": {"key": "Role", "value": "build-host"},
+    "host_idle_stop_seconds": 1800,
     "document": "AWS-RunShellScript",
     "working_directory": "/opt/driftgate",
     "commands": [
@@ -22,5 +24,18 @@
     "topic_arn": "",
     "function_url": "",
     "timeout_seconds": 1800
+  },
+  "reference": {
+    "key": "",
+    "revision": "",
+    "commands": [
+      "set -euo pipefail",
+      "cd {working_directory} && git fetch && git checkout {reference_revision}",
+      "uv sync --frozen --no-dev",
+      ".venv/bin/python -m gate.serve --config serving/config.yaml & server=$!",
+      "trap 'kill $server' EXIT",
+      "until curl -fs http://127.0.0.1:8080/health >/dev/null; do sleep 2; done",
+      ".venv/bin/python -m gate reference --seed 0 --reference-key {reference_key} --s3-uri s3://{run_bucket} --upload"
+    ]
   }
 }

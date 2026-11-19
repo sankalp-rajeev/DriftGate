@@ -17,6 +17,7 @@
 | --- | --- |
 | Detector data and statistics | Section 6.2.1: D5 scores the full MMLU test split (14,042 questions), not a 2,000 sample, and freezes the T-30 choices; D3 agreement share and per-prompt KL redefined; D6 accepted as drafted; D1 gains a rendered-template diff beside ggufdoctor; F4 accepted as drafted |
 | Design answers | New Section 6.8 "Design answers (18 Nov, round 2)": gate mode before calibration, serving config values, approval timeout, storage stack, one active run, build host command, network stack parameters, trace viewer |
+| Round 3 decisions | Section 6.8 gains rows for appendix format, gate score, deregistration delay, S3 lifecycle, build-host start/stop, D2 threads and the reference key, ValidateService budget rule, `gate reference`, and stale-lock expiry; T-32 and T-33 added |
 | Backlog | T-30 blocks only T-08; T-05, T-11 and T-06 develop against the current 177-item panel as a development fixture, not frozen data |
 
 ### Changes in v1.2
@@ -233,6 +234,15 @@ Prometheus, Grafana and OpenTelemetry run on the laptop (instructor approved, 18
 | Build host | Checkout at `/opt/driftgate`. SSM runs `cd /opt/driftgate && git fetch && git checkout <commit> && deploy/build.sh --commit <commit> --run-id <id>`. Git access uses the CodeCommit credential helper with the instance profile |
 | Network stack (T-10) | New parameter `UseNat` (default `true`); when `false`, serving instances run in public subnets with ALB-only ingress. The ALB listens on HTTP 80 only, because the Lab has no domain or certificate; this is recorded in the Lab Constraints appendix. AMI: Amazon Linux 2023 from the SSM public parameter `/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64`. The network stack owns both the ALB and the target group; T-12 refers to the target group by name |
 | FR-24 trace viewer | Jaeger all-in-one is approved as the trace viewer |
+| Appendix format (FR-28) | The Evidence column moves to `docs/lab-constraints-evidence.md`; the table keeps short IDs (E1, E2 …). One sentence per cell. Target 500 words or fewer; must render on one landscape Letter page |
+| Gate score (FR-20, FR-23) | Per detector, score = its statistic ÷ its threshold, oriented so that above 1 means fail. Agreement-type metrics use (1 − value) ÷ (1 − threshold). Gate score = the maximum over detectors; the verdict is fail when it is above 1. `GateScore` is published to CloudWatch only in enforce mode; the raw per-detector values are always published. The rollback alarm fires on `GateScore` > 1 for 1 datapoint |
+| Target group deregistration delay | 30 s |
+| S3 lifecycle (`driftgate-storage`) | Noncurrent versions expire after 7 days; incomplete multipart uploads are aborted after 1 day; current versions never expire |
+| Build host start/stop | The orchestrator starts the build host (tag `Role=build-host`) at the build stage if it is stopped, continues when the EC2 state-change event and SSM online status arrive, and stops the host when the build stage ends. A sweep stops it after more than 30 minutes idle. `ec2:StartInstances` and `ec2:StopInstances`, conditioned on that tag, are added to the documented orchestrator policy |
+| D2 thread count and reference key | Always `--threads 2` (the vCPU count of a t3.large), both when generating reference logits and when evaluating candidates, on every machine. Reference logits are stored under the same key as the reference measurement: `reference/<model-sha256>/<config-hash>/<instance-type>/` |
+| ValidateService prompt budget | 16 stays the provisional value while in report mode. The final budget is set by the T-08 rule: the smallest of 16, 64 or 256 at which the calibrated detectors hold FPR of 5% or less and the gate fits NFR-01 (10 minutes or less on t3.large) |
+| Reference measurement (`gate reference`) | New command: runs D3, D5 and D6 on the reference revision and writes the JSON to the reference key above. The orchestrator runs it automatically when no reference exists for that key. D6 thresholds are expressed as a ratio to the reference p95, not in milliseconds |
+| Stale lock | `runs/active.json` holds the `run_id` and `expires_at` = start + 2 h. An expired lock is stale: the next run takes it over and marks the old run abandoned in its run record. `make unlock` is the manual recovery |
 | Approved dependencies | jinja2 (D1 template diff); ggufdoctor as a dev dependency; Jaeger all-in-one image |
 
 ---
@@ -467,6 +477,8 @@ Rebased on Wednesday 18 November 2026. Thanksgiving (26 Nov) is a planned day of
 | T-28 Build host in the Lab: run `build.sh` via SSM, logs and bundle to S3 | FR-16 | Human (Lab) | 25 Nov | P3 | To do |
 | T-29 Least-privilege policy documents in `iam/`, one per service, with enforced-or-documented status | NFR-06 | Agent | 24 Nov | P3 | To do |
 | T-31 `driftgate-storage` persistent stack: S3 bucket with versioning, SSE, Block Public Access (Section 6.8) | NFR-05, FR-15, FR-16 | Agent | 24 Nov | P3 | To do |
+| T-32 Gate score and `gate reference`: score per detector, reference measurement at the reference key, D2 at 2 threads, D6 as a ratio (Section 6.8) | FR-20, FR-06, FR-09 | Agent | 22 Nov | P3 | To do |
+| T-33 Orchestrator follow-ups: build-host start/stop, automatic reference run, stale-lock expiry, `make unlock` (Section 6.8) | FR-15, FR-16 | Agent | 22 Nov | P3 | To do |
 | T-25 Lambda orchestrator, run record, EventBridge wiring | FR-15 | Agent | 24 Nov | P3 | To do (trigger path verified 17 Nov) |
 | T-10 CloudFormation per-session network stack | FR-21 | Agent | 24 Nov | P3 | To do |
 | T-12 CodeDeploy appspec and hooks, ALB target group | FR-17, FR-18 | Agent | 25 Nov | P3 | To do |

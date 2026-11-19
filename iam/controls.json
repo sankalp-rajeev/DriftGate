@@ -1,17 +1,17 @@
 {
-  "description": "NFR-06 least-privilege controls. status is 'enforced' (applied to a real resource in the Lab) or 'documented-only' (written policy; the Lab runs the principal as LabRole because role creation is denied). applied_in names the file that applies an enforced control, or null if no task applies it yet.",
+  "description": "NFR-06 least-privilege controls. status is 'enforced' only when a file in this repo (named in applied_in) applies the control to a real resource; otherwise 'documented-only' (a written policy that the Lab cannot attach, because every principal runs as LabRole or LabInstanceProfile).",
   "placeholders": {
     "AccountId": "Lab account id",
     "Region": "us-east-1 (NFR-08)",
-    "ArtifactBucket": "S3 bucket for models, reference logits, bundles, build logs and run records",
-    "OrchestratorFunction": "Lambda orchestrator function name (T-25)",
-    "ApprovalFunction": "Approval handler function name (T-26)",
-    "ApprovalTopic": "SNS approval topic name (T-26)",
-    "RulePrefix": "Name prefix shared by the pipeline's EventBridge rules (T-25)",
+    "ArtifactBucket": "S3 bucket owned by the persistent driftgate-storage stack: driftgate-artifacts-<account id>-<region>, exported as driftgate-storage-BucketName (models, reference logits, bundles, build logs, run records)",
+    "OrchestratorFunction": "Lambda orchestrator function name (orchestrator/template.yaml: driftgate-orchestrator)",
+    "ApprovalFunction": "Approval handler function name (orchestrator/template.yaml: driftgate-approval)",
+    "ApprovalTopic": "SNS approval topic name (orchestrator/template.yaml: driftgate-approval)",
+    "RulePrefix": "Name prefix of the pipeline's EventBridge rules: the orchestrator stack name (CloudFormation names each rule <stack>-<LogicalId>-<suffix>)",
     "CodeDeployApp": "CodeDeploy application name (T-12)",
     "DeploymentGroup": "CodeDeploy deployment group name (T-12)",
-    "TargetGroup": "ALB target group name (T-12)",
-    "Repository": "CodeCommit repository name",
+    "TargetGroup": "Serving target group, owned by the network stack (deploy/cloudformation/network.yaml, default driftgate-serving)",
+    "Repository": "CodeCommit repository name (orchestrator/template.yaml RepositoryName, default driftgate)",
     "MetricNamespace": "CloudWatch namespace of the gate metric (T-13)"
   },
   "controls": [
@@ -22,7 +22,7 @@
       "policy": "orchestrator-lambda.json",
       "status": "documented-only",
       "applied_in": null,
-      "lab_reality": "Runs as LabRole"
+      "lab_reality": "Runs as LabRole. Policy lists the calls orchestrator/handler.py makes: S3 run records and lock, SSM SendCommand to the build host, SNS publish, CodeDeploy CreateDeployment"
     },
     {
       "id": "iam-approval",
@@ -31,7 +31,7 @@
       "policy": "approval-lambda.json",
       "status": "documented-only",
       "applied_in": null,
-      "lab_reality": "Runs as LabRole"
+      "lab_reality": "Runs as LabRole. Runs Orchestrator.decide in-process: approve starts the deployment; reject or timeout ends the run and starts the queued build, so it needs the same S3, SSM and CodeDeploy calls (no SNS)"
     },
     {
       "id": "iam-build-host",
@@ -40,7 +40,7 @@
       "policy": "build-host-ec2.json",
       "status": "documented-only",
       "applied_in": null,
-      "lab_reality": "Uses LabInstanceProfile"
+      "lab_reality": "Uses LabInstanceProfile. Git fetch in /opt/driftgate goes through the CodeCommit credential helper with the instance profile credentials (codecommit:GitPull)"
     },
     {
       "id": "iam-serving",
@@ -66,8 +66,8 @@
       "kind": "resource-policy",
       "policy": "lambda-resource-orchestrator.json",
       "status": "enforced",
-      "applied_in": null,
-      "lab_reality": "Only the pipeline's EventBridge rules may invoke the orchestrator"
+      "applied_in": "orchestrator/template.yaml",
+      "lab_reality": "One AWS::Lambda::Permission per EventBridge rule (push, build status, deploy state, approval sweep), each with that rule's exact SourceArn; stricter than the prefix form in the policy file"
     },
     {
       "id": "lambda-resource-approval-url",
@@ -75,8 +75,17 @@
       "kind": "resource-policy",
       "policy": "lambda-resource-approval-url.json",
       "status": "enforced",
-      "applied_in": null,
-      "lab_reality": "Only the function URL may invoke the approval handler; the one-time token (FR-27) authorizes the request"
+      "applied_in": "orchestrator/template.yaml",
+      "lab_reality": "Only lambda:InvokeFunctionUrl with FunctionUrlAuthType NONE; the request is authorized by the one-time token"
+    },
+    {
+      "id": "approval-token",
+      "service": "Lambda approval handler",
+      "kind": "application",
+      "policy": null,
+      "status": "enforced",
+      "applied_in": "orchestrator/handler.py",
+      "lab_reality": "Random single-use token, stored only as a SHA-256 hash; rejected after the 1,800 s approval timeout (orchestrator/config.json approval.timeout_seconds) and swept every 5 minutes; GET only renders a confirm page, POST decides (PRD 6.8, FR-27)"
     },
     {
       "id": "s3-bucket-policy",
@@ -84,8 +93,8 @@
       "kind": "resource-policy",
       "policy": "s3-bucket-policy.json",
       "status": "enforced",
-      "applied_in": null,
-      "lab_reality": "Account-only, TLS-only, encrypted puts only"
+      "applied_in": "deploy/cloudformation/storage.yaml",
+      "lab_reality": "driftgate-storage stack: account-only, TLS-only, encrypted puts only; also versioning, SSE-S3 and Block Public Access (NFR-05)"
     },
     {
       "id": "sg-alb",
@@ -94,7 +103,7 @@
       "policy": null,
       "status": "enforced",
       "applied_in": "deploy/cloudformation/network.yaml",
-      "lab_reality": "Ingress TCP 80 and 443 only"
+      "lab_reality": "Ingress TCP 80 only; HTTP 80 listener because the Lab has no domain or certificate"
     },
     {
       "id": "sg-serving",
@@ -103,7 +112,7 @@
       "policy": null,
       "status": "enforced",
       "applied_in": "deploy/cloudformation/network.yaml",
-      "lab_reality": "Ingress only from the ALB security group on the serving port"
+      "lab_reality": "Ingress only from the ALB security group on the serving port; the network stack's target group is the only route in. Holds with UseNat=false (public subnets) too"
     },
     {
       "id": "sg-build-host",
@@ -112,7 +121,7 @@
       "policy": null,
       "status": "enforced",
       "applied_in": "deploy/cloudformation/network.yaml",
-      "lab_reality": "No inbound rules"
+      "lab_reality": "No inbound rules (with or without NAT)"
     },
     {
       "id": "ssm-not-ssh",

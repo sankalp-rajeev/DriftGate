@@ -1,0 +1,17 @@
+{
+  "description": "CloudWatch metrics published by the ValidateService hook (FR-20, PRD 6.8). GateScore only in enforce mode; the raw per-detector values always. Dimension: the CodeDeploy deployment group, so one alarm covers every instance.",
+  "namespace": "DriftGate",
+  "dimension": "DeploymentGroup",
+  "gate_score": {"name": "GateScore", "unit": "None"},
+  "raw": [
+    {"name": "D3MeanAgreementShare", "detector": "D3", "path": "mean_agreement_share", "unit": "None"},
+    {"name": "D3MeanApproxKL", "detector": "D3", "path": "mean_approx_kl", "unit": "None"},
+    {"name": "D3P95ApproxKL", "detector": "D3", "path": "p95_approx_kl", "unit": "None"},
+    {"name": "D5DeltaAccuracy", "detector": "D5", "path": "delta_accuracy", "unit": "None"},
+    {"name": "D5AccuracyDrop", "detector": "D5", "path": "accuracy_drop", "unit": "None"},
+    {"name": "D6TtftRatio", "detector": "D6", "path": "ratio.p95_ttft_ms", "unit": "None"},
+    {"name": "D6ItlRatio", "detector": "D6", "path": "ratio.p95_itl_ms", "unit": "None"},
+    {"name": "D6P95TtftMs", "detector": "D6", "path": "candidate.p95_ttft_ms", "unit": "Milliseconds"},
+    {"name": "D6P95ItlMs", "detector": "D6", "path": "candidate.p95_itl_ms", "unit": "Milliseconds"}
+  ]
+}

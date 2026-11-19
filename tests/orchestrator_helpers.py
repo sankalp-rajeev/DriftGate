@@ -7,7 +7,6 @@ from urllib.parse import parse_qs, urlparse
 
 REGION = "us-east-1"
 BUCKET = "driftgate-runs-test"
-INSTANCE = "i-0123456789abcdef0"
 COMMIT = "0123456789abcdef0123456789abcdef01234567"
 APPROVAL_URL = "https://abc123.lambda-url.us-east-1.on.aws/"
 
@@ -124,3 +123,17 @@ def approve_latest(pipeline, run_id, decision="approve"):
 def build_succeeds(pipeline, run_id):
     command_id = stage(read_record(pipeline["s3"], run_id), "build")["details"]["command_id"]
     return pipeline["orc"].handle(ssm_event(command_id, "Success"))
+
+
+def ec2_event(instance_id, state):
+    return {
+        "id": f"ec2-{instance_id}-{state}",
+        "detail-type": "EC2 Instance State-change Notification",
+        "source": "aws.ec2",
+        "detail": {"instance-id": instance_id, "state": state},
+    }
+
+
+def host_comes_up(pipeline):
+    """The build host's EC2 'running' event arrives (it is already SSM-online in the fixture)."""
+    return pipeline["orc"].handle(ec2_event(pipeline["host_id"], "running"))
