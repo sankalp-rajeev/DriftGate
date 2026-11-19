@@ -46,8 +46,8 @@ def test_selection_keeps_sometimes_right_items_after_seeded_shuffle():
 
 def test_reference_scores_cover_the_seeded_sample():
     scores = _read("d5_reference_scores.jsonl")
-    assert len(scores) == SRC["sample"] == 2000
-    assert len({s["id"] for s in scores}) == 2000
+    assert len(scores) == SRC["sample"] == 14042  # the whole MMLU test split (PRD v1.3)
+    assert len({s["id"] for s in scores}) == 14042
     assert all(0.0 <= s["gold_prob"] <= 1.0 + 1e-9 for s in scores)
 
 
