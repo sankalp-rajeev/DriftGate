@@ -76,24 +76,33 @@ def measure(
     panel_path: Path,
     config_path: Path | None = None,
     tel=None,
+    d5_budget: int | None = None,
+    skip_d3: bool = False,
 ) -> dict:
+    """`budget` D3 prompts and `d5_budget` D5 items (default: `budget`), both file prefixes.
+
+    `skip_d3` leaves D3 empty (the RQ2 quantization sweep measures D5 only).
+    """
     prompts = _jsonl(prompts_path)
     panel = _jsonl(panel_path)
-    if budget < 1 or budget > len(prompts) or budget > len(panel):
+    d5_budget = budget if d5_budget is None else d5_budget
+    if not 1 <= budget <= len(prompts) or not 1 <= d5_budget <= len(panel):
         raise ValueError(
-            f"budget {budget} outside 1..min({len(prompts)} prompts, {len(panel)} panel items)"
+            f"budget {budget}/{d5_budget} outside 1..{len(prompts)} prompts, "
+            f"1..{len(panel)} panel items"
         )
     props = server.props()
     t0 = time.monotonic()
     with _span(tel, "D3"):
-        d3_run = d3.measure(server, prompts[:budget], seed)
+        d3_run = [] if skip_d3 else d3.measure(server, prompts[:budget], seed)
     t1 = time.monotonic()
     with _span(tel, "D5"):
-        d5_run = d5.measure(server, panel[:budget], seed)
+        d5_run = d5.measure(server, panel[:d5_budget], seed)
     t2 = time.monotonic()
     return {
         "schema": MEASUREMENT_SCHEMA,
         "budget": budget,
+        "d5_budget": d5_budget,
         "seed": seed,
         "server": {
             "url": server.base_url,
@@ -223,7 +232,9 @@ def _parser() -> argparse.ArgumentParser:
             s.add_argument("--server", help="base URL (default: host and port from --config)")
             s.add_argument("--seed", type=int, required=name != "reference")
         if name in ("measure", "run"):
-            s.add_argument("--budget", type=int, required=True)
+            where = s.add_mutually_exclusive_group(required=True)
+            where.add_argument("--budget", type=int, help="D3 prompts and D5 items, both this many")
+            where.add_argument("--level", help="budget level L1, L2 or L3 (gate config `levels`)")
         if name in ("compare", "run", "reference"):
             s.add_argument(
                 "--instance-type",
@@ -268,14 +279,20 @@ def _main(args, tel, span, run_id: str) -> int:
             return _reference(args, gate_config, tel)
         if args.cmd in ("measure", "run"):
             url = args.server or server_url(load_yaml(args.config))
+            if args.level:
+                lv = gate_config["levels"][args.level]
+                n3, n5 = lv["d3"], lv["d5"]
+            else:
+                n3, n5 = args.budget, args.budget
             m = measure(
                 LlamaServer(url),
-                args.budget,
+                n3,
                 args.seed,
                 Path(gate_config["data"]["d3_prompts"]),
                 Path(gate_config["data"]["d5_panel"]),
                 args.config,
                 tel,
+                d5_budget=n5,
             )
             if m["server"]["model_path"]:
                 span.set_attribute("gen_ai.request.model", Path(m["server"]["model_path"]).name)

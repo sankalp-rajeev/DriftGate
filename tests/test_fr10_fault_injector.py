@@ -1,4 +1,4 @@
-"""FR-10: fault injector builds A/A, F1 to F4, F6, F7 and F9 as reproducible diffs."""
+"""FR-10: fault injector builds A/A, F1 to F7 and F9 as reproducible diffs."""
 
 import json
 import subprocess
@@ -72,7 +72,7 @@ def test_f4_edits_only_the_chat_template(tmp_path):
     assert f"{REF['chat_template']}" in (out / "diff.log").read_text()
 
 
-@pytest.mark.parametrize("fault", ["AA", "F1", "F2", "F3", "F4", "F6", "F7", "F9"])
+@pytest.mark.parametrize("fault", ["AA", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F9"])
 def test_bundles_are_reproducible(tmp_path, fault):
     a = inject.build(fault, tmp_path / "a")
     b = inject.build(fault, tmp_path / "b")
@@ -158,3 +158,28 @@ def test_aa_harness_records_one_verdict_per_redeploy(tmp_path):
         assert d["D3"]["mean_agreement_share"] == 1.0
         assert d["D5"]["delta_accuracy"] == 0.0
         assert (out / f"run-{i:02d}.measurement.json").is_file()
+
+
+def test_f5_deletes_only_the_tool_call_instruction_in_the_tools_branch(tmp_path):
+    ref = Path("serving/templates/qwen2.5-instruct.jinja").read_text().splitlines()
+    out, _, _ = _bundle(tmp_path, "F5")
+    bundled = (out / "serving/templates/qwen2.5-instruct.jinja").read_text().splitlines()
+    changed = [(a, b) for a, b in zip(ref, bundled, strict=True) if a != b]
+    assert len(ref) == len(bundled) and len(changed) == 1
+    before, after = changed[0]
+    assert "return a json object with function name and arguments within" in before
+    assert "return a json object" not in after
+    assert "<tool_call>" in after  # the rest of the branch, and every other branch, is unchanged
+    assert (
+        before.replace(
+            "For each function call, return a json object with function name and arguments within "
+            "<tool_call></tool_call> XML tags:\\n",
+            "",
+        )
+        == after
+    )
+
+
+def test_f9_is_threads_auto_to_one(tmp_path):
+    _, _, config = _bundle(tmp_path, "F9")
+    assert REF["threads"] == -1 and config["threads"] == 1

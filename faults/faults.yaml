@@ -29,8 +29,16 @@ faults:
     template:
       - find: "system\\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>"
         replace: "system\\nYou are a helpful assistant.<|im_end|>"
-  # F6, F7 and F9 as pre-registered (PRD Section 6.8, 19 Nov). F5 (tool-call branch of the
-  # template) and F8 (latest llama.cpp release tag on the day T-15 starts) are defined at T-15.
+  # F5, F6, F7 and F9 as pre-registered (PRD Section 6.8). F8 is built by the study runner:
+  # the latest llama.cpp release tag, recorded in the run log, as a diff to the llama_cpp_lock file.
+  F5:
+    layer: serving
+    description: >-
+      Tool-call branch of the template (tools only): the sentence that tells the model to return
+      function calls inside <tool_call></tool_call> tags is deleted; every other branch is unchanged
+    template:
+      - find: "For each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\\n"
+        replace: ""
   F6:
     layer: serving
     description: Default sampler temperature raised by 0.5 (the gate sends greedy requests; null result pre-registered)
@@ -43,6 +51,22 @@ faults:
       context.ctx_size: 256
   F9:
     layer: engine
-    description: Serving threads 2 to 1 (RQ3 control)
+    description: Serving threads -1 (auto) to 1 (RQ3 control)
     set:
       threads: 1
+  # RQ2 quantization sweep, analysis only (PRD Section 6.8): Q8_0 is AA, Q4_K_M is F1, Q2_K is F2.
+  S-Q6_K:
+    layer: artifact
+    description: Sweep point, weights Q8_0 to Q6_K
+    set:
+      model: qwen2.5-1.5b-instruct-q6_k.gguf
+  S-Q5_K_M:
+    layer: artifact
+    description: Sweep point, weights Q8_0 to Q5_K_M
+    set:
+      model: qwen2.5-1.5b-instruct-q5_k_m.gguf
+  S-Q3_K_M:
+    layer: artifact
+    description: Sweep point, weights Q8_0 to Q3_K_M
+    set:
+      model: qwen2.5-1.5b-instruct-q3_k_m.gguf
