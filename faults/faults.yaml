@@ -29,3 +29,20 @@ faults:
     template:
       - find: "system\\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>"
         replace: "system\\nYou are a helpful assistant.<|im_end|>"
+  # F6, F7 and F9 as pre-registered (PRD Section 6.8, 19 Nov). F5 (tool-call branch of the
+  # template) and F8 (latest llama.cpp release tag on the day T-15 starts) are defined at T-15.
+  F6:
+    layer: serving
+    description: Default sampler temperature raised by 0.5 (the gate sends greedy requests; null result pre-registered)
+    set:
+      sampler.temperature: 1.3
+  F7:
+    layer: serving
+    description: Context window cut from 4096 to 256, below panel prompt length
+    set:
+      context.ctx_size: 256
+  F9:
+    layer: engine
+    description: Serving threads 2 to 1 (RQ3 control)
+    set:
+      threads: 1

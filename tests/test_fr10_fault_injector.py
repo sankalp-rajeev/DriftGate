@@ -1,4 +1,4 @@
-"""FR-10: fault injector produces A/A and F1 to F4 as reproducible config or artifact diffs."""
+"""FR-10: fault injector builds A/A, F1 to F4, F6, F7 and F9 as reproducible diffs."""
 
 import json
 import subprocess
@@ -72,7 +72,7 @@ def test_f4_edits_only_the_chat_template(tmp_path):
     assert f"{REF['chat_template']}" in (out / "diff.log").read_text()
 
 
-@pytest.mark.parametrize("fault", ["AA", "F1", "F2", "F3", "F4"])
+@pytest.mark.parametrize("fault", ["AA", "F1", "F2", "F3", "F4", "F6", "F7", "F9"])
 def test_bundles_are_reproducible(tmp_path, fault):
     a = inject.build(fault, tmp_path / "a")
     b = inject.build(fault, tmp_path / "b")
