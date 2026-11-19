@@ -45,6 +45,7 @@ def metrics(reference: list[dict], candidate: list[dict]) -> dict:
         "reference_accuracy": mean(ref),
         "candidate_accuracy": mean(cand),
         "delta_accuracy": mean(cand) - mean(ref),
+        "accuracy_drop": mean(ref) - mean(cand),  # for an "upper" threshold rule (gate score)
         "ci95": [lo, hi],
         "bootstrap": {"resamples": RESAMPLES, "seed": BOOTSTRAP_SEED, "method": "percentile"},
         "mcnemar": mcnemar_exact(ref, cand),
