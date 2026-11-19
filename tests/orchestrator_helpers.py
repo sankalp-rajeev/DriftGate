@@ -35,13 +35,19 @@ class SpySNS:
         return self.client.publish(**kwargs)
 
 
-def push_event(branch="main", commit=COMMIT, event="referenceUpdated", event_id="evt-1"):
+def push_event(
+    branch="main",
+    commit=COMMIT,
+    event="referenceUpdated",
+    event_id="evt-1",
+    time="2026-11-24T12:00:00Z",
+):
     return {
         "version": "0",
         "id": event_id,
         "detail-type": "CodeCommit Repository State Change",
         "source": "aws.codecommit",
-        "time": "2026-11-24T12:00:00Z",
+        "time": time,
         "region": REGION,
         "resources": [f"arn:aws:codecommit:{REGION}:123456789012:driftgate"],
         "detail": {

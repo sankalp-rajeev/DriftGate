@@ -4,11 +4,15 @@ Event-driven: every invocation handles one EventBridge event, makes at most one 
 transition (one AWS start call plus a run-record write) and returns. Nothing waits on SSM or
 CodeDeploy; their status-change events invoke the function again.
 
-  CodeCommit push to the configured branch  -> new run, source done, build started (SSM)
+  CodeCommit push to the configured branch  -> new run, source done, build started (SSM);
+                                               if a run is active, queued as "latest" instead
   SSM command status (terminal)             -> build done; on success approval requested (SNS)
   approval decision (orchestrator/approval) -> approve starts deploy; reject ends the run
   scheduled sweep (EventBridge rate rule)   -> approvals past their deadline are rejected
   CodeDeploy deployment state (terminal)    -> deploy done, run finished
+
+One active run at a time (PRD 6.8): `runs/active.json` is created with a conditional put and
+deleted when the run ends, whatever the outcome; the queued push, if any, then starts.
 """
 
 from __future__ import annotations
@@ -24,6 +28,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 import boto3
+from botocore.exceptions import ClientError
 
 from orchestrator import run_record as rr
 from orchestrator.config import Config, load_config
@@ -99,8 +104,6 @@ class Orchestrator:
         if existing:
             return _ignored("duplicate push event", existing)
 
-        now = self.clock()
-        run_id = f"{now.strftime('%Y%m%dT%H%M%SZ')}-{d['commitId'][:8]}"
         trigger = {
             "repository": d.get("repositoryName"),
             "branch": d["referenceName"],
@@ -108,13 +111,54 @@ class Orchestrator:
             "event_id": event_id,
             "event_time": event.get("time"),
         }
-        record = rr.new_record(run_id, trigger, self.STAGES, now)
-        rr.start_stage(record, "source", now)
-        rr.end_stage(record, "source", "succeeded", f"push {d['commitId']}", now)
-        self._start_build(record)
+        return self._start_or_queue(trigger)
+
+    def _start_or_queue(self, trigger: dict[str, Any]) -> dict[str, Any]:
+        now = self.clock()
+        run_id = f"{now.strftime('%Y%m%dT%H%M%SZ')}-{trigger['commit_id'][:8]}"
+        if not self.store.acquire_lock(run_id, now):
+            return self._queue(trigger)
+        try:
+            record = rr.new_record(run_id, trigger, self.STAGES, now)
+            rr.start_stage(record, "source", now)
+            rr.end_stage(record, "source", "succeeded", f"push {trigger['commit_id']}", now)
+            self._start_build(record)
+        except Exception:
+            self.store.release_lock(run_id)
+            raise
         # Indexed last so a failed start can be retried by EventBridge redelivery.
-        self.store.put_index("event", event_id, run_id)
+        self.store.put_index("event", trigger["event_id"], run_id)
         return {"action": "run_started", "run_id": run_id}
+
+    def _queue(self, trigger: dict[str, Any]) -> dict[str, Any]:
+        """Keep only the latest push that arrived during the active run."""
+        active = self.store.lock_holder()
+        current = self.store.queued()
+        if current and (current["trigger"].get("event_time") or "") > (
+            trigger.get("event_time") or ""
+        ):
+            return _ignored("older than the queued push", active)
+        self.store.put_queued({"trigger": trigger, "queued_at": rr.iso(self.clock())})
+        out: dict[str, Any] = {
+            "action": "queued",
+            "commit_id": trigger["commit_id"],
+            "active_run_id": active,
+        }
+        if current and current["trigger"]["commit_id"] != trigger["commit_id"]:
+            out["replaced_commit_id"] = current["trigger"]["commit_id"]
+        return out
+
+    def _start_queued(self) -> dict[str, Any] | None:
+        entry = self.store.queued()
+        if not entry:
+            return None
+        # Cleared first: a push arriving after the new run starts must queue, not be lost.
+        self.store.clear_queued()
+        try:
+            return self._start_or_queue(entry["trigger"])
+        except Exception:
+            self.store.put_queued(entry)
+            raise
 
     def _start_build(self, record: dict[str, Any]) -> None:
         now = self.clock()
@@ -126,10 +170,7 @@ class Orchestrator:
             InstanceIds=self.cfg.build.instance_ids,
             DocumentName=self.cfg.build.document,
             Comment=f"driftgate build {run_id}"[:100],
-            Parameters={
-                "commands": commands,
-                "workingDirectory": [self.cfg.build.working_directory],
-            },
+            Parameters={"commands": commands},
             OutputS3BucketName=self.cfg.run_bucket,
             OutputS3KeyPrefix=log_prefix,
         )
@@ -247,7 +288,8 @@ class Orchestrator:
             self._finish(record, "failed")
             return {"result": "rejected", "run_id": run_id}
         self._end_approval(record, "succeeded", "approved", now, details)
-        self.start_deploy(record)
+        if self.start_deploy(record)["action"] != "deploy_started":
+            return {"result": "deploy_rejected", "run_id": run_id}
         return {"result": "approved", "run_id": run_id}
 
     def sweep_approvals(self) -> dict[str, Any]:
@@ -285,29 +327,44 @@ class Orchestrator:
         now = self.clock()
         fields = self._template_fields(record)
         dc = self.cfg.deploy
-        resp = self.codedeploy.create_deployment(
-            applicationName=dc.application_name,
-            deploymentGroupName=dc.deployment_group_name,
-            description=f"driftgate run {record['run_id']}",
-            revision={
-                "revisionType": "S3",
-                "s3Location": {
-                    "bucket": fields["bundle_bucket"],
-                    "key": fields["bundle_key"],
-                    "bundleType": dc.bundle_type,
+        bundle_uri = f"s3://{fields['bundle_bucket']}/{fields['bundle_key']}"
+        try:
+            resp = self.codedeploy.create_deployment(
+                applicationName=dc.application_name,
+                deploymentGroupName=dc.deployment_group_name,
+                description=f"driftgate run {record['run_id']}",
+                revision={
+                    "revisionType": "S3",
+                    "s3Location": {
+                        "bucket": fields["bundle_bucket"],
+                        "key": fields["bundle_key"],
+                        "bundleType": dc.bundle_type,
+                    },
                 },
-            },
-        )
+            )
+        except ClientError as e:
+            # E.g. DeploymentGroupAlreadyHasActiveDeployment (a deployment started outside
+            # DriftGate, or a rollback still running). Record it and end the run so the lock
+            # is released, instead of failing the invocation and leaving the run stuck.
+            err = e.response.get("Error", {})
+            rr.start_stage(record, "deploy", now, {"bundle_uri": bundle_uri})
+            rr.end_stage(
+                record,
+                "deploy",
+                "failed",
+                err.get("Code", "ClientError"),
+                now,
+                {"error": err.get("Message", str(e))},
+            )
+            out = self._finish(record, "failed")
+            return {**out, "reason": "deploy_rejected"}
         deployment_id = resp["deploymentId"]
         self.store.put_index("codedeploy", deployment_id, record["run_id"])
         rr.start_stage(
             record,
             "deploy",
             now,
-            {
-                "deployment_id": deployment_id,
-                "bundle_uri": f"s3://{fields['bundle_bucket']}/{fields['bundle_key']}",
-            },
+            {"deployment_id": deployment_id, "bundle_uri": bundle_uri},
         )
         self.store.save(record)
         return {"action": "deploy_started", "run_id": record["run_id"]}
@@ -331,7 +388,16 @@ class Orchestrator:
     def _finish(self, record: dict[str, Any], status: str) -> dict[str, Any]:
         rr.finish_run(record, status, self.clock())
         self.store.save(record)
-        return {"action": "run_finished", "run_id": record["run_id"], "status": status}
+        self.store.release_lock(record["run_id"])
+        out: dict[str, Any] = {
+            "action": "run_finished",
+            "run_id": record["run_id"],
+            "status": status,
+        }
+        nxt = self._start_queued()
+        if nxt:
+            out["next"] = nxt
+        return out
 
     def _record_for(self, kind: str, key: str | None) -> dict[str, Any] | None:
         if not key:
@@ -348,6 +414,7 @@ class Orchestrator:
             "bundle_bucket": self.cfg.deploy.bundle_bucket,
             "bundle_key": self.cfg.deploy.bundle_key.format(commit_id=commit_id, run_id=run_id),
             "run_bucket": self.cfg.run_bucket,
+            "working_directory": self.cfg.build.working_directory,
         }
 
 
