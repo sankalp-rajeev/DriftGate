@@ -2,9 +2,13 @@
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "RunRecords",
+      "Sid": "RunRecordsAndLock",
       "Effect": "Allow",
-      "Action": ["s3:GetObject", "s3:PutObject"],
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
       "Resource": "arn:aws:s3:::${ArtifactBucket}/runs/*"
     },
     {
@@ -12,20 +16,24 @@
       "Effect": "Allow",
       "Action": "s3:ListBucket",
       "Resource": "arn:aws:s3:::${ArtifactBucket}",
-      "Condition": {"StringLike": {"s3:prefix": ["runs/*"]}}
-    },
-    {
-      "Sid": "ReadBuildLogs",
-      "Effect": "Allow",
-      "Action": "s3:GetObject",
-      "Resource": "arn:aws:s3:::${ArtifactBucket}/build-logs/*"
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": [
+            "runs/*"
+          ]
+        }
+      }
     },
     {
       "Sid": "RunBuildOnBuildHostOnly",
       "Effect": "Allow",
       "Action": "ssm:SendCommand",
       "Resource": "arn:aws:ec2:${Region}:${AccountId}:instance/*",
-      "Condition": {"StringEquals": {"ssm:resourceTag/Role": "build-host"}}
+      "Condition": {
+        "StringEquals": {
+          "ssm:resourceTag/Role": "build-host"
+        }
+      }
     },
     {
       "Sid": "RunShellScriptDocumentOnly",
@@ -34,21 +42,15 @@
       "Resource": "arn:aws:ssm:${Region}::document/AWS-RunShellScript"
     },
     {
-      "Sid": "ReadCommandStatus",
-      "Effect": "Allow",
-      "Action": ["ssm:GetCommandInvocation", "ssm:ListCommandInvocations"],
-      "Resource": "*"
-    },
-    {
       "Sid": "ApprovalEmail",
       "Effect": "Allow",
       "Action": "sns:Publish",
       "Resource": "arn:aws:sns:${Region}:${AccountId}:${ApprovalTopic}"
     },
     {
-      "Sid": "StartAndTrackDeployment",
+      "Sid": "StartDeployment",
       "Effect": "Allow",
-      "Action": ["codedeploy:CreateDeployment", "codedeploy:GetDeployment"],
+      "Action": "codedeploy:CreateDeployment",
       "Resource": "arn:aws:codedeploy:${Region}:${AccountId}:deploymentgroup:${CodeDeployApp}/${DeploymentGroup}"
     },
     {
@@ -60,13 +62,20 @@
     {
       "Sid": "RegisterRevision",
       "Effect": "Allow",
-      "Action": ["codedeploy:RegisterApplicationRevision", "codedeploy:GetApplicationRevision"],
+      "Action": [
+        "codedeploy:RegisterApplicationRevision",
+        "codedeploy:GetApplicationRevision"
+      ],
       "Resource": "arn:aws:codedeploy:${Region}:${AccountId}:application:${CodeDeployApp}"
     },
     {
       "Sid": "OwnLogs",
       "Effect": "Allow",
-      "Action": ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"],
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
       "Resource": "arn:aws:logs:${Region}:${AccountId}:log-group:/aws/lambda/${OrchestratorFunction}:*"
     }
   ]
