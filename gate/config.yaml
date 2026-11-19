@@ -15,7 +15,13 @@ baseline: gate/baseline.yaml
 reference_store:
   local_root: artifacts
   s3_uri: null          # e.g. s3://<bucket>; used only with an explicit --upload
-  budget: 256           # largest PRD budget (16, 64, 256), so every budget's items are covered
+  budget: 256           # reference covers every level: D3 and D5 items 1..256
+# Budget levels (PRD Section 6.8): items are prefixes of the frozen D3 and D5 files; a run at L3
+# covers L1 and L2. D3 prompts and D5 items per level.
+levels:
+  L1: {d3: 16, d5: 64}
+  L2: {d3: 32, d5: 128}
+  L3: {d3: 64, d5: 256}
 data:
   d3_prompts: gate/data/d3_prompts.jsonl
   d5_panel: gate/data/d5_panel.jsonl            # frozen by T-30 (PRD Section 6.2.1)
