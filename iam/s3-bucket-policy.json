@@ -1,0 +1,29 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyNonTls",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:*",
+      "Resource": ["arn:aws:s3:::${ArtifactBucket}", "arn:aws:s3:::${ArtifactBucket}/*"],
+      "Condition": {"Bool": {"aws:SecureTransport": "false"}}
+    },
+    {
+      "Sid": "DenyOutsideAccount",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:*",
+      "Resource": ["arn:aws:s3:::${ArtifactBucket}", "arn:aws:s3:::${ArtifactBucket}/*"],
+      "Condition": {"StringNotEquals": {"aws:PrincipalAccount": "${AccountId}"}}
+    },
+    {
+      "Sid": "DenyUnencryptedPut",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:PutObject",
+      "Resource": "arn:aws:s3:::${ArtifactBucket}/*",
+      "Condition": {"Null": {"s3:x-amz-server-side-encryption": "true"}}
+    }
+  ]
+}

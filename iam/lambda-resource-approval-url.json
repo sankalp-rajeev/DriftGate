@@ -1,0 +1,13 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ApprovalFunctionUrlOnly",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "lambda:InvokeFunctionUrl",
+      "Resource": "arn:aws:lambda:${Region}:${AccountId}:function:${ApprovalFunction}",
+      "Condition": {"StringEquals": {"lambda:FunctionUrlAuthType": "NONE"}}
+    }
+  ]
+}
