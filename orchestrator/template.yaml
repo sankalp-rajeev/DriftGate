@@ -39,8 +39,8 @@ Parameters:
     Type: String
     Default: rate(5 minutes)
     Description: >-
-      How often expired approvals are rejected. The timeout itself is approval.timeout_seconds
-      in orchestrator/config.json; this only bounds how late a timeout is recorded.
+      How often expired approvals are rejected (PRD 6.8: every 5 minutes). The timeout itself
+      is approval.timeout_seconds in orchestrator/config.json (1800 s).
 
 Resources:
   OrchestratorFunction:
