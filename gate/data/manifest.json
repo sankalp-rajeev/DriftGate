@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "files": {
+    "sources.yaml": "fa752e3f70f173424699bdd76f409fbaa1af03a3cd5133b3ffcaf0dd8880b8ab",
+    "d2_corpus.txt": "6c61f209b53a8f7e0ee25e22815b8472d1a29cf891f0a29bca35ae82cd285b75",
+    "d3_prompts.jsonl": "72ac638abbc4c635160c496feddfb06a4e194ef3b5e5a86be1c869b72e171dd0",
+    "d5_reference_scores.jsonl": "a24d65db21892e0cb1f3f260ee31107a2ecf1cafc7440db76b03039c34b59f33",
+    "d5_panel.jsonl": "796b864cbf9b45481a9d0e4c6e8e239c9a90fc209b818d777b433153806dba4d",
+    "d5_hidden_pool.jsonl": "e35e2d50ed8a34346f42d8caf9aab8b963983dcb78712317185b60166049b4c5"
+  }
+}
