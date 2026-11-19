@@ -130,3 +130,30 @@ def test_session_down_leaves_storage_stack():
         ["make", "-n", "down"], cwd=ROOT, capture_output=True, text=True, check=True
     ).stdout
     assert "driftgate-storage" not in out
+
+
+def _lifecycle_rules(bucket):
+    return bucket["LifecycleConfiguration"]["Rules"]
+
+
+def test_noncurrent_versions_expire_after_7_days(bucket):
+    rules = [r for r in _lifecycle_rules(bucket) if "NoncurrentVersionExpiration" in r]
+    assert len(rules) == 1 and rules[0]["Status"] == "Enabled"
+    assert rules[0]["NoncurrentVersionExpiration"] == {"NoncurrentDays": 7}
+
+
+def test_incomplete_multipart_uploads_aborted_after_1_day(bucket):
+    rules = [r for r in _lifecycle_rules(bucket) if "AbortIncompleteMultipartUpload" in r]
+    assert len(rules) == 1 and rules[0]["Status"] == "Enabled"
+    assert rules[0]["AbortIncompleteMultipartUpload"] == {"DaysAfterInitiation": 1}
+
+
+def test_no_rule_expires_current_versions(bucket):
+    # ExpirationInDays / ExpirationDate are the only rule fields that expire current versions.
+    for rule in _lifecycle_rules(bucket):
+        assert not {"ExpirationInDays", "ExpirationDate"} & set(rule), rule.get("Id")
+
+
+def test_lifecycle_keeps_bucket_policy_in_sync(template):
+    # Lifecycle changes must not drift the bucket policy from iam/s3-bucket-policy.json.
+    test_bucket_policy_matches_iam_document(template)
