@@ -10,9 +10,14 @@ Each rule names a detector, a metric inside that detector's verdict block (dotte
 it is scored, so that a score above 1 means fail:
 
     kind "upper"      the statistic must stay at or below the threshold
-                      score = statistic / threshold                     (threshold > 0)
+                      score = statistic / threshold                     (threshold >= 0)
     kind "agreement"  an agreement-type metric in [0, 1] that must stay at or above the threshold
-                      score = (1 - value) / (1 - threshold)             (threshold < 1)
+                      score = (1 - value) / (1 - threshold)             (threshold <= 1)
+
+A zero margin is allowed (PRD Section 6.8: when every A/A statistic is zero, the threshold is
+zero and any change fails): upper threshold 0, or agreement threshold 1. The score is then 0 at
+the threshold and `ZERO_MARGIN_SCORE` (a finite stand-in for infinity, so it can be published)
+beyond it.
 
 D6 rules must use a ratio to the reference p95 (`ratio.p95_ttft_ms`, `ratio.p95_itl_ms`) with
 kind "upper": D6 thresholds are ratios, not milliseconds. D5's paired drop is available as
@@ -27,6 +32,7 @@ from __future__ import annotations
 import math
 
 THRESHOLDS_SCHEMA = "driftgate.thresholds/2"
+ZERO_MARGIN_SCORE = 1e6
 KINDS = ("upper", "agreement")
 D6_RATIO_METRICS = ("ratio.p95_ttft_ms", "ratio.p95_itl_ms")
 
@@ -53,10 +59,10 @@ def validate(thresholds: dict) -> list[dict]:
         v = r["value"]
         if not isinstance(v, int | float) or not math.isfinite(v):
             raise ValueError(f"rule {r}: value must be a finite number")
-        if r["kind"] == "upper" and v <= 0:
-            raise ValueError(f"rule {r}: an upper threshold must be > 0")
-        if r["kind"] == "agreement" and not 0 <= v < 1:
-            raise ValueError(f"rule {r}: an agreement threshold must be in [0, 1)")
+        if r["kind"] == "upper" and v < 0:
+            raise ValueError(f"rule {r}: an upper threshold must be >= 0")
+        if r["kind"] == "agreement" and not 0 <= v <= 1:
+            raise ValueError(f"rule {r}: an agreement threshold must be in [0, 1]")
         if r["detector"] == "D6" and (r["metric"] not in D6_RATIO_METRICS or r["kind"] != "upper"):
             raise ValueError(
                 f"rule {r}: D6 thresholds are ratios to the reference p95, "
@@ -66,9 +72,12 @@ def validate(thresholds: dict) -> list[dict]:
 
 
 def rule_score(observed: float, kind: str, threshold: float) -> float:
-    if kind == "upper":
-        return observed / threshold
-    return (1 - observed) / (1 - threshold)
+    numerator, denominator = (
+        (observed, threshold) if kind == "upper" else (1 - observed, 1 - threshold)
+    )
+    if denominator == 0:
+        return 0.0 if numerator <= 0 else ZERO_MARGIN_SCORE
+    return numerator / denominator
 
 
 def score(dets: dict, thresholds: dict) -> dict:
