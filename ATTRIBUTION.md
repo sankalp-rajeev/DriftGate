@@ -5,7 +5,8 @@ Third-party code, tools, models and datasets used by DriftGate. Licenses come fr
 | Name | Use | License | Link |
 | --- | --- | --- | --- |
 | llama.cpp | Serving engine (llama-server), `llama-perplexity` for D2 | TBD (verify) | https://github.com/ggml-org/llama.cpp |
-| ggufdoctor | D1 chat-template lint | TBD (verify) | https://pypi.org/project/ggufdoctor/ |
+| ggufdoctor | D1 check (a): lint of the GGUF chat template (dev dependency, run through `uv run`) | TBD (verify) | https://pypi.org/project/ggufdoctor/ |
+| Jinja2 | D1 check (b): renders the served and pinned upstream chat templates for the rendered-template diff | TBD (verify) | https://pypi.org/project/Jinja2/ |
 | Model Equality Testing | D4 MMD two-sample test | TBD (verify) | https://arxiv.org/abs/2410.20247 |
 | infer-check | Prior art; upstream contribution target | TBD (verify) | https://pypi.org/project/infer-check/ |
 | Qwen2.5-1.5B-Instruct-GGUF | Reference model (Q8_0), faults F1 (Q4_K_M) and F2 (Q2_K) | Apache-2.0 | https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF |
