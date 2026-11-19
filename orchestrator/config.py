@@ -23,6 +23,8 @@ ENV_OVERRIDES: dict[str, tuple[str | None, str]] = {
     "DRIFTGATE_BUNDLE_BUCKET": ("deploy", "bundle_bucket"),
     "DRIFTGATE_APPROVAL_TOPIC_ARN": ("approval", "topic_arn"),
     "DRIFTGATE_APPROVAL_URL": ("approval", "function_url"),
+    "DRIFTGATE_GATE_REFERENCE_KEY": ("reference", "key"),
+    "DRIFTGATE_GATE_REFERENCE_REVISION": ("reference", "revision"),
 }
 
 
@@ -48,6 +50,19 @@ class DeployConfig:
 
 
 @dataclass(frozen=True)
+class ReferenceConfig:
+    # PRD 6.8 automatic reference run. `key` is an explicit input: the reference key the
+    # gate compares candidates against (reference/<model-sha256>/<config-hash>/<instance-type>/).
+    # How candidates get the reference revision's key is an open owner decision (pin it in
+    # gate/config.yaml or pass --reference-key), so the orchestrator never derives it; empty
+    # `key` or `revision` disables the automatic reference run.
+    key: str
+    # Git revision (commit, branch or tag) that is the reference; checked out for the run.
+    revision: str
+    commands: list[str]
+
+
+@dataclass(frozen=True)
 class ApprovalConfig:
     topic_arn: str
     function_url: str
@@ -67,6 +82,7 @@ class Config:
     build: BuildConfig
     deploy: DeployConfig
     approval: ApprovalConfig
+    reference: ReferenceConfig
     raw: dict[str, Any]
 
 
@@ -94,5 +110,6 @@ def load_config(path: str | os.PathLike | None = None) -> Config:
             function_url=raw["approval"]["function_url"],
             timeout_seconds=int(raw["approval"]["timeout_seconds"]),
         ),
+        reference=ReferenceConfig(**raw["reference"]),
         raw=raw,
     )

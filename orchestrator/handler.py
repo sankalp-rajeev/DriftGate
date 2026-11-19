@@ -245,10 +245,82 @@ class Orchestrator:
             details["ssm_online"] = True
             details["host_ready_at"] = rr.iso(self.clock())
             self.store.delete_index("host-wait", instance_id)
-            self._send_build(record, instance_id)
-            return {"action": "build_started", "run_id": record["run_id"]}
+            return self._reference_or_build(record, instance_id)
         self.store.save(record)
         return {"action": "waiting_for_host", "run_id": record["run_id"]}
+
+    # ---- automatic reference run (PRD 6.8) --------------------------------------------------
+
+    def reference_exists(self, key: str) -> bool:
+        """Whether a reference measurement is stored under `key` in the run bucket."""
+        try:
+            self.s3.head_object(Bucket=self.cfg.run_bucket, Key=f"{key}measurement.json")
+        except ClientError as e:
+            if e.response.get("Error", {}).get("Code") in ("404", "NoSuchKey", "NotFound"):
+                return False
+            raise
+        return True
+
+    def _reference_or_build(self, record: dict[str, Any], instance_id: str) -> dict[str, Any]:
+        """Before the build, run `gate reference` on the build host if no reference exists for
+        the configured key. The key is an explicit input (orchestrator config `reference.key`),
+        never derived here."""
+        ref = self.cfg.reference
+        key = ref.key if not ref.key or ref.key.endswith("/") else ref.key + "/"
+        details = rr.get_stage(record, "build")["details"]
+        if not key or not ref.revision:
+            details["reference"] = {"status": "skipped", "reason": "no reference key configured"}
+        elif self.reference_exists(key):
+            details["reference"] = {"status": "exists", "key": key}
+        else:
+            return self._start_reference(record, instance_id, key)
+        self._send_build(record, instance_id)
+        return {"action": "build_started", "run_id": record["run_id"]}
+
+    def _start_reference(self, record: dict[str, Any], instance_id: str, key: str):
+        now = self.clock()
+        run_id = record["run_id"]
+        fields = {
+            **self._template_fields(record),
+            "reference_key": key,
+            "reference_revision": self.cfg.reference.revision,
+        }
+        resp = self.ssm.send_command(
+            InstanceIds=[instance_id],
+            DocumentName=self.cfg.build.document,
+            Comment=f"driftgate reference {run_id}"[:100],
+            Parameters={"commands": [c.format(**fields) for c in self.cfg.reference.commands]},
+            OutputS3BucketName=self.cfg.run_bucket,
+            OutputS3KeyPrefix=self.store.run_key_prefix(run_id, "reference-log/"),
+        )
+        command_id = resp["Command"]["CommandId"]
+        self.store.put_index("ssm", command_id, run_id)
+        details = rr.get_stage(record, "build")["details"]
+        details["reference"] = {
+            "status": "running",
+            "key": key,
+            "revision": self.cfg.reference.revision,
+            "command_id": command_id,
+            "started_at": rr.iso(now),
+            "log_uri": self.store.run_uri(run_id, "reference-log/"),
+        }
+        self.store.put_host_usage(instance_id, now)
+        self.store.save(record)
+        return {"action": "reference_started", "run_id": run_id}
+
+    def _on_reference_status(self, record: dict[str, Any], status: str) -> dict[str, Any]:
+        now = self.clock()
+        build = rr.get_stage(record, "build")
+        ref = build["details"]["reference"]
+        ref["status"] = "succeeded" if status in SSM_SUCCESS else "failed"
+        ref["outcome"] = status
+        ref["ended_at"] = rr.iso(now)
+        if status in SSM_FAILURE:
+            self._stop_build_host(record)
+            rr.end_stage(record, "build", "failed", f"reference run {status}", now)
+            return self._finish(record, "failed")
+        self._send_build(record, build["details"]["instance_id"])
+        return {"action": "build_started", "run_id": record["run_id"]}
 
     def on_instance_state(self, event: dict[str, Any]) -> dict[str, Any]:
         d = event.get("detail", {})
@@ -349,8 +421,16 @@ class Orchestrator:
         record = self._record_for("ssm", d.get("command-id"))
         if record is None:
             return _ignored("unknown ssm command")
-        if rr.get_stage(record, "build")["status"] != "running":
+        build = rr.get_stage(record, "build")
+        if build["status"] != "running":
             return _ignored("build already finished", record["run_id"])
+        ref = build["details"].get("reference", {})
+        if ref.get("command_id") == d.get("command-id"):
+            if ref.get("status") != "running":
+                return _ignored("reference run already finished", record["run_id"])
+            return self._on_reference_status(record, status)
+        if build["details"].get("command_id") != d.get("command-id"):
+            return _ignored("not this run's build command", record["run_id"])
         now = self.clock()
         self._stop_build_host(record)
         if status in SSM_FAILURE:

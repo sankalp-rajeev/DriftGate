@@ -29,6 +29,16 @@ Parameters:
   CodeKey:
     Type: String
     Default: lambda/orchestrator.zip
+  ReferenceKey:
+    Type: String
+    Default: ""
+    Description: >-
+      Reference key (reference/<model-sha256>/<config-hash>/<instance-type>/) checked before
+      each build; empty disables the automatic `gate reference` run (owner decision pending)
+  ReferenceRevision:
+    Type: String
+    Default: ""
+    Description: Git revision checked out for the automatic reference run
   ApprovalEmail:
     Type: String
     Description: Address that receives approval emails (confirm the SNS subscription once)
@@ -58,6 +68,8 @@ Resources:
           DRIFTGATE_BRANCH: !Ref Branch
           DRIFTGATE_CODEDEPLOY_APPLICATION: !Ref CodeDeployApplication
           DRIFTGATE_CODEDEPLOY_GROUP: !Ref CodeDeployGroup
+          DRIFTGATE_GATE_REFERENCE_KEY: !Ref ReferenceKey
+          DRIFTGATE_GATE_REFERENCE_REVISION: !Ref ReferenceRevision
           DRIFTGATE_APPROVAL_TOPIC_ARN: !Ref ApprovalTopic
           DRIFTGATE_APPROVAL_URL: !GetAtt ApprovalFunctionUrl.FunctionUrl
 
