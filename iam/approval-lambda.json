@@ -1,0 +1,23 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "RecordDecision",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject"],
+      "Resource": "arn:aws:s3:::${ArtifactBucket}/runs/*"
+    },
+    {
+      "Sid": "HandBackToOrchestrator",
+      "Effect": "Allow",
+      "Action": "lambda:InvokeFunction",
+      "Resource": "arn:aws:lambda:${Region}:${AccountId}:function:${OrchestratorFunction}"
+    },
+    {
+      "Sid": "OwnLogs",
+      "Effect": "Allow",
+      "Action": ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"],
+      "Resource": "arn:aws:logs:${Region}:${AccountId}:log-group:/aws/lambda/${ApprovalFunction}:*"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "FindTargetInstances",
+      "Effect": "Allow",
+      "Action": ["ec2:DescribeInstances", "ec2:DescribeInstanceStatus", "tag:GetResources"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ReadTargetHealth",
+      "Effect": "Allow",
+      "Action": [
+        "elasticloadbalancing:DescribeTargetGroups",
+        "elasticloadbalancing:DescribeTargetHealth"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DeregisterAndRegisterDuringDeploy",
+      "Effect": "Allow",
+      "Action": ["elasticloadbalancing:DeregisterTargets", "elasticloadbalancing:RegisterTargets"],
+      "Resource": "arn:aws:elasticloadbalancing:${Region}:${AccountId}:targetgroup/${TargetGroup}/*"
+    },
+    {
+      "Sid": "ReadRollbackAlarms",
+      "Effect": "Allow",
+      "Action": "cloudwatch:DescribeAlarms",
+      "Resource": "*"
+    }
+  ]
+}

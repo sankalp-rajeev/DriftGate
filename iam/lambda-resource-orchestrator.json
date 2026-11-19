@@ -1,0 +1,16 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "InvokeFromPipelineRulesOnly",
+      "Effect": "Allow",
+      "Principal": {"Service": "events.amazonaws.com"},
+      "Action": "lambda:InvokeFunction",
+      "Resource": "arn:aws:lambda:${Region}:${AccountId}:function:${OrchestratorFunction}",
+      "Condition": {
+        "ArnLike": {"AWS:SourceArn": "arn:aws:events:${Region}:${AccountId}:rule/${RulePrefix}-*"},
+        "StringEquals": {"AWS:SourceAccount": "${AccountId}"}
+      }
+    }
+  ]
+}

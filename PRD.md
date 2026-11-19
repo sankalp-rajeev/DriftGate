@@ -7,9 +7,17 @@
 | Instructor | Professor Furat Al-Obaidy |
 | Demo | Wednesday 2 December 2026 |
 | Teardown deadline | Thursday 3 December 2026 (within 24 h of demo) |
-| Version | 1.2, 18 November 2026 (v1.1 same day; v1.0 approved 9 November 2026) |
+| Version | 1.3, 18 November 2026 (v1.2 and v1.1 same day; v1.0 approved 9 November 2026) |
 | Status | P0 Spec approved; Lab probes done; Lab-native design approved by instructor 18 Nov; agent setup done (T-02); P2 Plan and P3 Build next |
 | Process | Agentic SDLC, defined in Section 11 |
+
+### Changes in v1.3
+
+| Area | Change |
+| --- | --- |
+| Detector data and statistics | Section 6.2.1: D5 scores the full MMLU test split (14,042 questions), not a 2,000 sample, and freezes the T-30 choices; D3 agreement share and per-prompt KL redefined; D6 accepted as drafted; D1 gains a rendered-template diff beside ggufdoctor; F4 accepted as drafted |
+| Design answers | New Section 6.8 "Design answers (18 Nov, round 2)": gate mode before calibration, serving config values, approval timeout, storage stack, one active run, build host command, network stack parameters, trace viewer |
+| Backlog | T-30 blocks only T-08; T-05, T-11 and T-06 develop against the current 177-item panel as a development fixture, not frozen data |
 
 ### Changes in v1.2
 
@@ -123,7 +131,7 @@ Status: llama-server answers `/v1/chat/completions` locally in WSL (Qwen2.5-0.5B
 
 | ID | Detector | Runs in | Acceptance criteria |
 | --- | --- | --- | --- |
-| FR-04 (D1) | Chat-template lint against upstream via ggufdoctor | Build host | Non-zero exit on F4 and F5 fixtures; zero on reference |
+| FR-04 (D1) | Chat-template lint against upstream: ggufdoctor on the GGUF plus a rendered-template diff (Section 6.2.1) | Build host | Non-zero exit on F4 and F5 fixtures; zero on reference |
 | FR-05 (D2) | Artifact KL and same-top-token rate via `llama-perplexity --kl-divergence` on a fixed small corpus against stored reference logits | Build host | Reports mean KL, 99th percentile KL, same-top-token %; reference vs itself within A/A threshold |
 | FR-06 (D3) | Live top-k logprob agreement on greedy continuations via `/completion` with `n_probs` | ValidateService | Reports top-1 agreement and approximate KL over a prompt set; JSON output |
 | FR-07 (D4) | MMD two-sample test on sampled completions (Model Equality Testing code) | ValidateService (optional) | p-value and decision at pre-registered alpha |
@@ -141,10 +149,12 @@ All data files below are built once by T-30, committed (text only, small), hashe
 | Downloads | `https://huggingface.co/<repo>/resolve/<commit>/<file>`, with the repo commit pinned in `serving/models.yaml`; SHA-256 recorded in the manifest at first download (FR-02). Files land in `models/` (gitignored) |
 | D2 corpus | The first 2,048 tokens (reference tokenizer) of the WikiText-2 raw test split (CC BY-SA), committed as `gate/data/d2_corpus.txt`. `llama-perplexity -c 512`. Reference logits are produced once with `--kl-divergence-base` on the reference model and stored in `artifacts/reference/` locally and in S3 for the build host; never in git |
 | D3 prompt set | 256 instructions from `databricks/databricks-dolly-15k` (CC BY-SA 3.0): records with an empty `context`, instruction length 20 to 300 characters, sampled with seed 0, committed as `gate/data/d3_prompts.jsonl`. Rendered through the serving chat template. Budgets 16, 64 and 256 are the first N records in file order |
-| D3 generation and metric | Greedy (temperature 0), 32 new tokens, `n_probs` 10, fixed seed. Per prompt: (a) agreement length, the number of generated tokens identical to the reference before the first difference, as a share of 32; (b) approximate KL(reference ‖ candidate) at each aligned position up to and including the first difference, computed over the union of both top-10 sets with probabilities missing from one side floored at 1e-6 and both sides renormalized. Reported: mean agreement share, mean and 95th-percentile approximate KL |
-| D5 panel | MMLU test split (`cais/mmlu`, MIT). Zero-shot prompt ending "Answer with A, B, C or D." A seeded sample of 2,000 questions (seed 0) is scored once on the reference model by the probability of the gold letter among the first generated token's top-10 (absent = 0). "Sometimes right" = gold-letter probability in [0.25, 0.75]. After a seed-0 shuffle, the first 256 such items form the public panel `gate/data/d5_panel.jsonl`; the next up to 512 form the hidden pool `gate/data/d5_hidden_pool.jsonl` for FR-14 |
+| D3 generation and metric | Greedy (temperature 0), 32 new tokens, `n_probs` 10, fixed seed. An end-of-sequence token counts as a token. Per prompt: (a) agreement share = matched prefix length ÷ max(reference length, candidate length), each length capped at 32, where the matched prefix is the number of generated tokens identical to the reference before the first difference; (b) approximate KL(reference ‖ candidate) at each aligned position up to and including the first difference, computed over the union of both top-10 sets with probabilities missing from one side floored at 1e-6 and both sides renormalized, then averaged over the aligned positions of that prompt. KL is never pooled across prompts. Reported: mean agreement share, and the mean and 95th percentile (p95) of per-prompt KL across prompts |
+| D5 panel | MMLU test split (`cais/mmlu`, MIT). Zero-shot prompt ending "Answer with A, B, C or D." All 14,042 test questions are scored once on the reference model (T-30 runs this in tmux). The gold-letter probability is the stripped-token mass in the first generated token's top-10: the summed probability of top-10 tokens that, with whitespace stripped, equal the gold letter (absent = 0). "Sometimes right" = gold-letter probability in [0.25, 0.75]. After a seed-0 shuffle, the first 256 such items form the public panel `gate/data/d5_panel.jsonl`; the next up to 512 form the hidden pool `gate/data/d5_hidden_pool.jsonl` for FR-14. The prompt layout, the gold-letter probability computation, the seeded question order and the WikiText handling (blank lines kept in the D2 corpus) are frozen as implemented in T-30 (PR #36). Until the full scoring run finishes, T-05, T-11 and T-06 develop against the earlier 177-item panel (from the 2,000-question seed-0 sample) as a development fixture, not frozen data |
 | D5 scoring and statistics | Exact match of the first generated letter (greedy) against gold. Statistic: paired per-item delta in accuracy (candidate minus reference) on identical items. 95% interval by paired bootstrap (10,000 resamples, seed 0, percentile method); exact McNemar p-value reported alongside. The gate threshold comes from A/A calibration (FR-12), not from the interval |
-| D6 | p95 time to first token and p95 inter-token latency over the D3 run, from llama-server response timings. Budget threshold from A/A calibration |
+| D6 | Time to first token (TTFT) = `prompt_ms`; inter-token latency = `predicted_ms / predicted_n`; each reported as p95 across the prompts of the D3 run, from llama-server response timings. Budget threshold from A/A calibration |
+| D1 | Two checks, either failing exits non-zero: (a) ggufdoctor on the GGUF, installed with `uv add --dev ggufdoctor` and run through `uv run`; (b) a rendered-template diff: render fixed test conversations through the served template file and through a pinned copy of the upstream template (`serving/templates/reference.jinja`) using jinja2 (approved dependency). The conversations are one plain chat, one with a system turn and one with a tool call; any difference exits non-zero |
+| F4 | An edit to the default system prompt in the chat template |
 | F3 flags | `--cache-type-k q4_0 --cache-type-v q4_0 --flash-attn on` (V-cache quantization needs flash attention). T-04 confirms these flags in the pinned build's `llama-server --help` and stops if they differ |
 
 ### 6.3 Fault injection and calibration
@@ -210,6 +220,20 @@ Prometheus, Grafana and OpenTelemetry run on the laptop (instructor approved, 18
 | ID | Requirement | Acceptance criteria |
 | --- | --- | --- |
 | FR-28 | One-page appendix "Lab Constraints and Equivalences" in the final submission | One table: constraint, what the Lab does, equivalent used, evidence (probe screenshot or log), what is lost; covers CodePipeline, CodeBuild, IAM role creation and least privilege, research layer on laptop, Cost Explorer lag, session stops |
+
+### 6.8 Design answers (18 Nov, round 2)
+
+| Topic | Decision |
+| --- | --- |
+| Gate mode (ValidateService before calibration) | The gate has a mode set in config. It runs `report` (records verdicts, exits 0) until `gate/thresholds.json` exists from T-15, then switches to `enforce`. `DRIFTGATE_FORCE_FAIL=1` makes the hook exit non-zero in either mode, for the T-13 rollback drills |
+| Serving config defaults | `parallel: 1` and `seed: 0` kept; `ctx_size: 4096` (was 32768) |
+| FR-27 approval | Timeout 1,800 s; sweep every 5 minutes. The confirm click stays: GET shows the page, POST records the decision, so email link scanners cannot approve. Tokens are random, single-use and expire after the timeout |
+| Storage | A separate persistent stack, `driftgate-storage` (versioning, SSE, Block Public Access), owns the S3 bucket for models, reference logits, bundles, run records and logs. The per-session network stack does not |
+| Concurrent pushes | One active run at a time, held by a lock on `runs/active.json` taken with an S3 conditional put. A push during a run queues as "latest"; a newer push replaces the queued one |
+| Build host | Checkout at `/opt/driftgate`. SSM runs `cd /opt/driftgate && git fetch && git checkout <commit> && deploy/build.sh --commit <commit> --run-id <id>`. Git access uses the CodeCommit credential helper with the instance profile |
+| Network stack (T-10) | New parameter `UseNat` (default `true`); when `false`, serving instances run in public subnets with ALB-only ingress. The ALB listens on HTTP 80 only, because the Lab has no domain or certificate; this is recorded in the Lab Constraints appendix. AMI: Amazon Linux 2023 from the SSM public parameter `/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64`. The network stack owns both the ALB and the target group; T-12 refers to the target group by name |
+| FR-24 trace viewer | Jaeger all-in-one is approved as the trace viewer |
+| Approved dependencies | jinja2 (D1 template diff); ggufdoctor as a dev dependency; Jaeger all-in-one image |
 
 ---
 
@@ -442,6 +466,7 @@ Rebased on Wednesday 18 November 2026. Thanksgiving (26 Nov) is a planned day of
 | T-11 Build checks: `deploy/build.sh` with tests, D1, D2, hashes, runnable locally | FR-02, FR-04, FR-05 | Agent | 23 Nov | P3 | To do |
 | T-28 Build host in the Lab: run `build.sh` via SSM, logs and bundle to S3 | FR-16 | Human (Lab) | 25 Nov | P3 | To do |
 | T-29 Least-privilege policy documents in `iam/`, one per service, with enforced-or-documented status | NFR-06 | Agent | 24 Nov | P3 | To do |
+| T-31 `driftgate-storage` persistent stack: S3 bucket with versioning, SSE, Block Public Access (Section 6.8) | NFR-05, FR-15, FR-16 | Agent | 24 Nov | P3 | To do |
 | T-25 Lambda orchestrator, run record, EventBridge wiring | FR-15 | Agent | 24 Nov | P3 | To do (trigger path verified 17 Nov) |
 | T-10 CloudFormation per-session network stack | FR-21 | Agent | 24 Nov | P3 | To do |
 | T-12 CodeDeploy appspec and hooks, ALB target group | FR-17, FR-18 | Agent | 25 Nov | P3 | To do |
@@ -604,7 +629,6 @@ Never cut: A/A calibration, 3+ faults with automatic rollback, push-triggered pi
 ## 18. Open questions
 
 - Which Learner Lab variant (Foundational or Associate) the course uses, and its allow-list for CodeDeploy service roles, Lambda function URLs, NAT, Access Analyzer.
-- Confirm the KV-cache flags in Section 6.2.1 against the pinned llama.cpp build (T-04).
 - Size of stored reference logits for a 2k-token corpus with a ~150k vocabulary (measure on day 2).
 
 ---

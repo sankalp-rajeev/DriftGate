@@ -26,7 +26,6 @@
   "approval": {
     "topic_arn": "",
     "function_url": "",
-    "timeout_seconds": 3600,
-    "timeout_seconds_note": "PLACEHOLDER: FR-27 approval timeout not set in PRD.md; needs a human decision"
+    "timeout_seconds": 1800
   }
 }
