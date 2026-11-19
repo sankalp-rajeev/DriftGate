@@ -1,5 +1,6 @@
 [
   {"ParameterKey": "ProjectTag", "ParameterValue": "driftgate"},
+  {"ParameterKey": "UseNat", "ParameterValue": "true"},
   {"ParameterKey": "ServingPort", "ParameterValue": "8080"},
   {"ParameterKey": "InstanceProfileName", "ParameterValue": "LabInstanceProfile"},
   {"ParameterKey": "InstanceType", "ParameterValue": "t3.large"}
