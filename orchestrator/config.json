@@ -8,12 +8,7 @@
     "document": "AWS-RunShellScript",
     "working_directory": "/opt/driftgate",
     "commands": [
-      "set -euo pipefail",
-      "git fetch --quiet origin",
-      "git checkout --quiet --detach {commit_id}",
-      "export DRIFTGATE_RUN_ID={run_id} DRIFTGATE_COMMIT_ID={commit_id}",
-      "export DRIFTGATE_BUNDLE_URI=s3://{bundle_bucket}/{bundle_key}",
-      "deploy/build.sh"
+      "cd {working_directory} && git fetch && git checkout {commit_id} && deploy/build.sh --commit {commit_id} --run-id {run_id}"
     ]
   },
   "deploy": {
@@ -22,5 +17,10 @@
     "bundle_bucket": "",
     "bundle_key": "bundles/{commit_id}.zip",
     "bundle_type": "zip"
+  },
+  "approval": {
+    "topic_arn": "",
+    "function_url": "",
+    "timeout_seconds": 1800
   }
 }

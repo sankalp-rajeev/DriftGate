@@ -1,0 +1,47 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "SessionManagerAndRunCommand",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:UpdateInstanceInformation",
+        "ssmmessages:CreateControlChannel",
+        "ssmmessages:CreateDataChannel",
+        "ssmmessages:OpenControlChannel",
+        "ssmmessages:OpenDataChannel",
+        "ec2messages:AcknowledgeMessage",
+        "ec2messages:DeleteMessage",
+        "ec2messages:FailMessage",
+        "ec2messages:GetEndpoint",
+        "ec2messages:GetMessages",
+        "ec2messages:SendReply"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "PullSource",
+      "Effect": "Allow",
+      "Action": "codecommit:GitPull",
+      "Resource": "arn:aws:codecommit:${Region}:${AccountId}:${Repository}"
+    },
+    {
+      "Sid": "ReadModelsAndReferenceLogits",
+      "Effect": "Allow",
+      "Action": "s3:GetObject",
+      "Resource": [
+        "arn:aws:s3:::${ArtifactBucket}/models/*",
+        "arn:aws:s3:::${ArtifactBucket}/reference/*"
+      ]
+    },
+    {
+      "Sid": "WriteBundlesAndBuildLogs",
+      "Effect": "Allow",
+      "Action": "s3:PutObject",
+      "Resource": [
+        "arn:aws:s3:::${ArtifactBucket}/bundles/*",
+        "arn:aws:s3:::${ArtifactBucket}/build-logs/*"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,93 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  DriftGate persistent storage stack, driftgate-storage (PRD 6.8, NFR-05). One S3
+  bucket for models, reference logits, bundles, run records and build logs, with
+  versioning, SSE-S3, Block Public Access, bucket-owner-enforced ownership and the
+  bucket policy from iam/s3-bucket-policy.json (account-only, TLS-only,
+  encrypted puts only). Not part of the per-session network stack, so `make down`
+  never deletes stored data; created and deleted with `make storage-up` and
+  `make storage-down`.
+
+Parameters:
+  ProjectTag:
+    Type: String
+    Default: driftgate
+    Description: Value of the Project cost-allocation tag.
+  BucketNamePrefix:
+    Type: String
+    Default: driftgate-artifacts
+    AllowedPattern: "^[a-z0-9][a-z0-9-]{1,30}$"
+    Description: >-
+      The bucket is named <prefix>-<account id>-<region> so the name is globally
+      unique and other stacks can derive it.
+
+Resources:
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${BucketNamePrefix}-${AWS::AccountId}-${AWS::Region}"
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectTag
+
+  # Mirrors iam/s3-bucket-policy.json; tests/test_nfr05_storage_stack.py keeps them equal.
+  ArtifactBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ArtifactBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyNonTls
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !Sub "arn:aws:s3:::${ArtifactBucket}"
+              - !Sub "arn:aws:s3:::${ArtifactBucket}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+          - Sid: DenyOutsideAccount
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !Sub "arn:aws:s3:::${ArtifactBucket}"
+              - !Sub "arn:aws:s3:::${ArtifactBucket}/*"
+            Condition:
+              StringNotEquals:
+                aws:PrincipalAccount: !Sub "${AWS::AccountId}"
+          - Sid: DenyUnencryptedPut
+            Effect: Deny
+            Principal: "*"
+            Action: s3:PutObject
+            Resource: !Sub "arn:aws:s3:::${ArtifactBucket}/*"
+            Condition:
+              "Null":
+                s3:x-amz-server-side-encryption: "true"
+
+Outputs:
+  BucketName:
+    Description: Artifact bucket name, for the orchestrator template (RunBucketName) and the build host
+    Value: !Ref ArtifactBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-BucketName"
+  BucketArn:
+    Value: !GetAtt ArtifactBucket.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-BucketArn"

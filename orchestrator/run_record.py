@@ -1,9 +1,14 @@
 """JSON run record kept in S3 (FR-15).
 
 Layout under `<run_prefix>`:
+  active.json                    lock: the one active run {"run_id", "acquired_at"}, taken with
+                                 a conditional put (If-None-Match: *), deleted when the run ends
+  queued.json                    the latest push that arrived during the active run (a newer
+                                 push replaces it); started when the lock is released
   <run_id>/run.json              the run record (schema below)
   <run_id>/build-log/...         SSM Run Command output (written by SSM)
   index/<kind>/<key>.json        pointer {"run_id": ...} from an external id to its run
+                                 (kinds: event, ssm, codedeploy, approval-pending)
 
 Run record schema (version 1):
   schema_version, run_id, status (running|succeeded|failed), current_stage,
@@ -145,6 +150,68 @@ class RunStore:
 
     def put_index(self, kind: str, key: str, run_id: str) -> None:
         self._put_json(self._index_key(kind, key), {"run_id": run_id})
+
+    def delete_index(self, kind: str, key: str) -> None:
+        self.s3.delete_object(Bucket=self.bucket, Key=self._index_key(kind, key))
+
+    def list_index(self, kind: str) -> list[str]:
+        """Keys (not run ids) currently in an index, e.g. runs awaiting approval."""
+        prefix = f"{self.prefix}index/{kind}/"
+        keys: list[str] = []
+        for page in self.s3.get_paginator("list_objects_v2").paginate(
+            Bucket=self.bucket, Prefix=prefix
+        ):
+            for obj in page.get("Contents", []):
+                keys.append(obj["Key"][len(prefix) : -len(".json")])
+        return keys
+
+    # ---- one active run (PRD 6.8) ---------------------------------------------------------
+
+    @property
+    def lock_key(self) -> str:
+        return f"{self.prefix}active.json"
+
+    @property
+    def queue_key(self) -> str:
+        return f"{self.prefix}queued.json"
+
+    def acquire_lock(self, run_id: str, now: datetime) -> bool:
+        """Create `active.json` only if absent. False when another run holds the lock."""
+        try:
+            self.s3.put_object(
+                Bucket=self.bucket,
+                Key=self.lock_key,
+                Body=json.dumps({"run_id": run_id, "acquired_at": iso(now)}).encode(),
+                ContentType="application/json",
+                ServerSideEncryption="AES256",
+                IfNoneMatch="*",
+            )
+        except self.s3.exceptions.ClientError as e:
+            code = e.response.get("Error", {}).get("Code")
+            if code in ("PreconditionFailed", "ConditionalRequestConflict"):
+                return False
+            raise
+        return True
+
+    def lock_holder(self) -> str | None:
+        found = self._get_json(self.lock_key)
+        return found["run_id"] if found else None
+
+    def release_lock(self, run_id: str) -> bool:
+        """Delete the lock if `run_id` holds it. Returns whether it was released."""
+        if self.lock_holder() != run_id:
+            return False
+        self.s3.delete_object(Bucket=self.bucket, Key=self.lock_key)
+        return True
+
+    def queued(self) -> dict[str, Any] | None:
+        return self._get_json(self.queue_key)
+
+    def put_queued(self, entry: dict[str, Any]) -> None:
+        self._put_json(self.queue_key, entry)
+
+    def clear_queued(self) -> None:
+        self.s3.delete_object(Bucket=self.bucket, Key=self.queue_key)
 
     def lookup(self, kind: str, key: str) -> str | None:
         found = self._get_json(self._index_key(kind, key))

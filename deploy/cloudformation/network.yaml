@@ -1,10 +1,12 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
-  DriftGate per-session network stack (FR-21, ADR-005). VPC with public and
-  private subnets in two AZs, one NAT gateway, an S3 gateway endpoint, an
-  internet-facing ALB, security groups (NFR-04, NFR-06) and IMDSv2-only launch
-  templates for the serving instances and build host. Created by `make up` at
-  the start of a Lab session and deleted by `make down` at the end.
+  DriftGate per-session network stack (FR-21, ADR-005, PRD 6.8). VPC with public
+  and private subnets in two AZs, one NAT gateway (UseNat=true) or public
+  instance subnets with ALB-only ingress (UseNat=false), an S3 gateway endpoint,
+  an internet-facing HTTP-80 ALB with the serving target group, security groups
+  (NFR-04, NFR-06) and IMDSv2-only launch templates on Amazon Linux 2023.
+  Created by `make up` at the start of a Lab session and deleted by `make down`.
+  The S3 bucket lives in the persistent driftgate-storage stack, not here.
 
 Parameters:
   ProjectTag:
@@ -26,6 +28,26 @@ Parameters:
   PrivateSubnetBCidr:
     Type: String
     Default: 10.42.11.0/24
+  UseNat:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: >-
+      true puts instances in private subnets behind one NAT gateway. false is the
+      PRD 14.4 fallback - no NAT; instances run in the public subnets with
+      ALB-only ingress and a public IP for outbound traffic.
+  TargetGroupName:
+    Type: String
+    Default: driftgate-serving
+    Description: Serving target group name; CodeDeploy (T-12) refers to it by this name.
+  HealthCheckPath:
+    Type: String
+    Default: /health
+    Description: llama-server health endpoint (FR-01).
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64
+    Description: Amazon Linux 2023 AMI from the SSM public parameter (PRD 6.8).
   ServingPort:
     Type: Number
     Default: 8080
@@ -43,6 +65,9 @@ Parameters:
     Type: Number
     Default: 20
     Description: Root EBS volume size in GiB (PRD Section 15 assumes 20 GB).
+
+Conditions:
+  UseNat: !Equals [!Ref UseNat, "true"]
 
 Resources:
   # ---------------------------------------------------------------- VPC
@@ -80,7 +105,7 @@ Resources:
       VpcId: !Ref Vpc
       CidrBlock: !Ref PublicSubnetACidr
       AvailabilityZone: !Select [0, !GetAZs ""]
-      MapPublicIpOnLaunch: false
+      MapPublicIpOnLaunch: !If [UseNat, false, true]
       Tags:
         - Key: Name
           Value: !Sub "${AWS::StackName}-public-a"
@@ -93,7 +118,7 @@ Resources:
       VpcId: !Ref Vpc
       CidrBlock: !Ref PublicSubnetBCidr
       AvailabilityZone: !Select [1, !GetAZs ""]
-      MapPublicIpOnLaunch: false
+      MapPublicIpOnLaunch: !If [UseNat, false, true]
       Tags:
         - Key: Name
           Value: !Sub "${AWS::StackName}-public-b"
@@ -102,6 +127,7 @@ Resources:
 
   PrivateSubnetA:
     Type: AWS::EC2::Subnet
+    Condition: UseNat
     Properties:
       VpcId: !Ref Vpc
       CidrBlock: !Ref PrivateSubnetACidr
@@ -115,6 +141,7 @@ Resources:
 
   PrivateSubnetB:
     Type: AWS::EC2::Subnet
+    Condition: UseNat
     Properties:
       VpcId: !Ref Vpc
       CidrBlock: !Ref PrivateSubnetBCidr
@@ -158,8 +185,10 @@ Resources:
       RouteTableId: !Ref PublicRouteTable
 
   # One NAT gateway for both private subnets: cost over AZ redundancy (PRD Section 15).
+  # Created only when UseNat is true.
   NatEip:
     Type: AWS::EC2::EIP
+    Condition: UseNat
     DependsOn: InternetGatewayAttachment
     Properties:
       Domain: vpc
@@ -171,6 +200,7 @@ Resources:
 
   NatGateway:
     Type: AWS::EC2::NatGateway
+    Condition: UseNat
     Properties:
       AllocationId: !GetAtt NatEip.AllocationId
       SubnetId: !Ref PublicSubnetA
@@ -182,6 +212,7 @@ Resources:
 
   PrivateRouteTable:
     Type: AWS::EC2::RouteTable
+    Condition: UseNat
     Properties:
       VpcId: !Ref Vpc
       Tags:
@@ -192,6 +223,7 @@ Resources:
 
   PrivateDefaultRoute:
     Type: AWS::EC2::Route
+    Condition: UseNat
     Properties:
       RouteTableId: !Ref PrivateRouteTable
       DestinationCidrBlock: 0.0.0.0/0
@@ -199,12 +231,14 @@ Resources:
 
   PrivateSubnetARouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: UseNat
     Properties:
       SubnetId: !Ref PrivateSubnetA
       RouteTableId: !Ref PrivateRouteTable
 
   PrivateSubnetBRouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: UseNat
     Properties:
       SubnetId: !Ref PrivateSubnetB
       RouteTableId: !Ref PrivateRouteTable
@@ -216,14 +250,16 @@ Resources:
       VpcId: !Ref Vpc
       ServiceName: !Sub "com.amazonaws.${AWS::Region}.s3"
       VpcEndpointType: Gateway
-      RouteTableIds:
-        - !Ref PrivateRouteTable
+      RouteTableIds: !If
+        - UseNat
+        - [!Ref PrivateRouteTable, !Ref PublicRouteTable]
+        - [!Ref PublicRouteTable]
 
   # ----------------------------------------------------- Security groups
   AlbSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: DriftGate ALB - HTTP and HTTPS from the internet only
+      GroupDescription: DriftGate ALB - HTTP 80 from the internet only (no domain or certificate in the Lab)
       VpcId: !Ref Vpc
       SecurityGroupIngress:
         - IpProtocol: tcp
@@ -231,11 +267,6 @@ Resources:
           ToPort: 80
           CidrIp: 0.0.0.0/0
           Description: HTTP
-        - IpProtocol: tcp
-          FromPort: 443
-          ToPort: 443
-          CidrIp: 0.0.0.0/0
-          Description: HTTPS
       Tags:
         - Key: Name
           Value: !Sub "${AWS::StackName}-alb"
@@ -272,8 +303,9 @@ Resources:
           Value: !Ref ProjectTag
 
   # ---------------------------------------------------------------- ALB
-  # Target group and forwarding rules belong to the CodeDeploy task (T-12); the
-  # default action answers 503 until that task attaches the serving target group.
+  # The network stack owns the ALB and the serving target group (PRD 6.8). CodeDeploy
+  # (T-12) refers to the target group by name (output TargetGroupName) and registers
+  # and deregisters instances during deploys. HTTP 80 only: no domain or certificate.
   Alb:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
@@ -300,20 +332,39 @@ Resources:
       Port: 80
       Protocol: HTTP
       DefaultActions:
-        - Type: fixed-response
-          FixedResponseConfig:
-            StatusCode: "503"
-            ContentType: text/plain
-            MessageBody: no serving target attached
+        - Type: forward
+          TargetGroupArn: !Ref ServingTargetGroup
+
+  ServingTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Ref TargetGroupName
+      VpcId: !Ref Vpc
+      TargetType: instance
+      Protocol: HTTP
+      Port: !Ref ServingPort
+      HealthCheckEnabled: true
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: !Ref HealthCheckPath
+      Matcher:
+        HttpCode: "200"
+      Tags:
+        - Key: Name
+          Value: !Ref TargetGroupName
+        - Key: Project
+          Value: !Ref ProjectTag
 
   # ---------------------------------------------------- Launch templates
   # IMDSv2 required, no key pair, LabInstanceProfile, encrypted root volume.
-  # AMI and user data are chosen by the tasks that launch instances (T-12, T-28).
+  # Amazon Linux 2023 AMI (PRD 6.8). User data is left to the tasks that launch
+  # instances (T-12, T-28). With UseNat=false the instances go in the public subnets,
+  # which then assign public IPs; inbound is still ALB-only (serving) or none (build host).
   ServingLaunchTemplate:
     Type: AWS::EC2::LaunchTemplate
     Properties:
       LaunchTemplateName: !Sub "${AWS::StackName}-serving"
       LaunchTemplateData:
+        ImageId: !Ref LatestAmiId
         InstanceType: !Ref InstanceType
         IamInstanceProfile:
           Name: !Ref InstanceProfileName
@@ -347,6 +398,7 @@ Resources:
     Properties:
       LaunchTemplateName: !Sub "${AWS::StackName}-build-host"
       LaunchTemplateData:
+        ImageId: !Ref LatestAmiId
         InstanceType: !Ref InstanceType
         IamInstanceProfile:
           Name: !Ref InstanceProfileName
@@ -385,9 +437,18 @@ Outputs:
     Export:
       Name: !Sub "${AWS::StackName}-PublicSubnetIds"
   PrivateSubnetIds:
+    Condition: UseNat
     Value: !Join [",", [!Ref PrivateSubnetA, !Ref PrivateSubnetB]]
     Export:
       Name: !Sub "${AWS::StackName}-PrivateSubnetIds"
+  InstanceSubnetIds:
+    Description: Subnets for serving instances and the build host (private with NAT, else public)
+    Value: !If
+      - UseNat
+      - !Join [",", [!Ref PrivateSubnetA, !Ref PrivateSubnetB]]
+      - !Join [",", [!Ref PublicSubnetA, !Ref PublicSubnetB]]
+    Export:
+      Name: !Sub "${AWS::StackName}-InstanceSubnetIds"
   AlbArn:
     Value: !Ref Alb
     Export:
@@ -401,6 +462,15 @@ Outputs:
     Value: !Ref AlbHttpListener
     Export:
       Name: !Sub "${AWS::StackName}-AlbListenerArn"
+  TargetGroupName:
+    Description: Serving target group name for the CodeDeploy deployment group (T-12)
+    Value: !GetAtt ServingTargetGroup.TargetGroupName
+    Export:
+      Name: !Sub "${AWS::StackName}-TargetGroupName"
+  TargetGroupArn:
+    Value: !Ref ServingTargetGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-TargetGroupArn"
   AlbSecurityGroupId:
     Value: !Ref AlbSecurityGroup
     Export:

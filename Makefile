@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup test lint fmt up down orchestrator-zip
+.PHONY: help setup test lint fmt models verify serve up down storage-up storage-down orchestrator-zip
 
 # Keep the project venv isolated from any PYTHONPATH set by the shell (e.g. a sourced ROS setup).
 unexport PYTHONPATH
@@ -7,6 +7,8 @@ unexport PYTHONPATH
 # Per-session network stack (FR-21). `make up` / `make down` call AWS: run them only in a Lab session.
 AWS_REGION ?= us-east-1
 STACK_NAME ?= driftgate-net
+# Persistent storage stack (PRD 6.8). Separate from the session stack: `make down` never touches it.
+STORAGE_STACK_NAME ?= driftgate-storage
 CFN_DIR := deploy/cloudformation
 CFN_TEMPLATES := $(CFN_DIR)/*.yaml
 
@@ -26,6 +28,15 @@ lint: ## Run ruff (lint and format check)
 fmt: ## Auto-format
 	uv run ruff format . && uv run ruff check --fix .
 
+models: ## Download pinned models into models/ and record SHA-256 in the manifest
+	uv run python -m gate.models
+
+verify: ## Check the served model against the SHA-256 manifest (FR-02)
+	uv run python -m gate.manifest verify
+
+serve: ## Run llama-server from serving/config.yaml (CONFIG=... to override)
+	uv run python -m gate.serve --config $(or $(CONFIG),serving/config.yaml)
+
 orchestrator-zip: ## Package the orchestrator Lambda (committed HEAD) to artifacts/orchestrator.zip
 	mkdir -p artifacts && git archive --format=zip -o artifacts/orchestrator.zip HEAD orchestrator/
 
@@ -34,3 +45,9 @@ up: ## Create or update the per-session network stack (calls AWS; Lab only)
 
 down: ## Delete the per-session network stack and wait (calls AWS; Lab only)
 	aws cloudformation delete-stack --region $(AWS_REGION) --stack-name $(STACK_NAME) && aws cloudformation wait stack-delete-complete --region $(AWS_REGION) --stack-name $(STACK_NAME)
+
+storage-up: ## Create or update the persistent driftgate-storage stack (calls AWS; Lab only)
+	aws cloudformation deploy --region $(AWS_REGION) --stack-name $(STORAGE_STACK_NAME) --template-file $(CFN_DIR)/storage.yaml --tags Project=driftgate --no-fail-on-empty-changeset
+
+storage-down: ## Delete the storage stack; empty every object version first (calls AWS; teardown only)
+	aws cloudformation delete-stack --region $(AWS_REGION) --stack-name $(STORAGE_STACK_NAME) && aws cloudformation wait stack-delete-complete --region $(AWS_REGION) --stack-name $(STORAGE_STACK_NAME)

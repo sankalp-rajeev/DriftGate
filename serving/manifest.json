@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "artifacts": {
+    "qwen2.5-0.5b-instruct-q8_0.gguf": {
+      "sha256": "ca59ca7f13d0e15a8cfa77bd17e65d24f6844b554a7b6c12e07a5f89ff76844e",
+      "size": 675710816,
+      "source": "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/9217f5db79a29953eb74d5343926648285ec7e67/qwen2.5-0.5b-instruct-q8_0.gguf"
+    },
+    "qwen2.5-1.5b-instruct-q2_k.gguf": {
+      "sha256": "5ede348e91ce1e7a330926ec5b202c27b864d065149dc463257fde1f98865b3a",
+      "size": 752880160,
+      "source": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/91cad51170dc346986eccefdc2dd33a9da36ead9/qwen2.5-1.5b-instruct-q2_k.gguf"
+    },
+    "qwen2.5-1.5b-instruct-q4_k_m.gguf": {
+      "sha256": "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e",
+      "size": 1117320736,
+      "source": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/91cad51170dc346986eccefdc2dd33a9da36ead9/qwen2.5-1.5b-instruct-q4_k_m.gguf"
+    },
+    "qwen2.5-1.5b-instruct-q8_0.gguf": {
+      "sha256": "d7efb072e7724d25048a4fda0a3e10b04bdef5d06b1403a1c93bd9f1240a63c8",
+      "size": 1894532128,
+      "source": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/91cad51170dc346986eccefdc2dd33a9da36ead9/qwen2.5-1.5b-instruct-q8_0.gguf"
+    }
+  }
+}

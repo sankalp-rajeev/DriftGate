@@ -22,6 +22,8 @@ ENV_OVERRIDES: dict[str, tuple[str | None, str]] = {
     "DRIFTGATE_CODEDEPLOY_APPLICATION": ("deploy", "application_name"),
     "DRIFTGATE_CODEDEPLOY_GROUP": ("deploy", "deployment_group_name"),
     "DRIFTGATE_BUNDLE_BUCKET": ("deploy", "bundle_bucket"),
+    "DRIFTGATE_APPROVAL_TOPIC_ARN": ("approval", "topic_arn"),
+    "DRIFTGATE_APPROVAL_URL": ("approval", "function_url"),
 }
 
 
@@ -43,6 +45,15 @@ class DeployConfig:
 
 
 @dataclass(frozen=True)
+class ApprovalConfig:
+    topic_arn: str
+    function_url: str
+    # FR-27 / PRD 6.8: no decision within this many seconds means reject. The one-time token
+    # expires at the same moment (the approval deadline); there is no separate token TTL.
+    timeout_seconds: int
+
+
+@dataclass(frozen=True)
 class Config:
     region: str
     branch: str
@@ -50,11 +61,8 @@ class Config:
     run_prefix: str
     build: BuildConfig
     deploy: DeployConfig
+    approval: ApprovalConfig
     raw: dict[str, Any]
-
-    def section(self, name: str) -> dict[str, Any]:
-        """Raw access to a config section added by later stages (e.g. `approval`)."""
-        return self.raw.get(name, {})
 
 
 def load_config(path: str | os.PathLike | None = None) -> Config:
@@ -77,5 +85,10 @@ def load_config(path: str | os.PathLike | None = None) -> Config:
         run_prefix=raw["run_prefix"],
         build=BuildConfig(**raw["build"]),
         deploy=DeployConfig(**deploy),
+        approval=ApprovalConfig(
+            topic_arn=raw["approval"]["topic_arn"],
+            function_url=raw["approval"]["function_url"],
+            timeout_seconds=int(raw["approval"]["timeout_seconds"]),
+        ),
         raw=raw,
     )

@@ -4,109 +4,36 @@ AC: a commit to `main` starts a run with no manual steps besides approval; the r
 shows every stage with timestamps and outcome. All AWS calls are mocked with moto.
 """
 
-import json
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 import boto3
 import pytest
-from moto import mock_aws
+from orchestrator_helpers import (
+    BUCKET,
+    COMMIT,
+    INSTANCE,
+    REGION,
+    approve_latest,
+    build_succeeds,
+    deploy_event,
+    push_event,
+    read_record,
+    ssm_event,
+    stage,
+)
 
 from orchestrator.config import load_config
-from orchestrator.handler import Orchestrator
 from orchestrator.run_record import RUN_RECORD_SCHEMA_VERSION
 
-REGION = "us-east-1"
-BUCKET = "driftgate-runs-test"
-INSTANCE = "i-0123456789abcdef0"
-COMMIT = "0123456789abcdef0123456789abcdef01234567"
 ROOT = Path(__file__).resolve().parents[1]
 
 
-class FakeClock:
-    def __init__(self):
-        self.t = datetime(2026, 11, 24, 12, 0, 0, tzinfo=UTC)
-
-    def __call__(self):
-        return self.t
-
-    def advance(self, seconds):
-        self.t += timedelta(seconds=seconds)
-
-
-def push_event(branch="main", commit=COMMIT, event="referenceUpdated", event_id="evt-1"):
-    return {
-        "version": "0",
-        "id": event_id,
-        "detail-type": "CodeCommit Repository State Change",
-        "source": "aws.codecommit",
-        "time": "2026-11-24T12:00:00Z",
-        "region": REGION,
-        "resources": [f"arn:aws:codecommit:{REGION}:123456789012:driftgate"],
-        "detail": {
-            "event": event,
-            "repositoryName": "driftgate",
-            "referenceType": "branch",
-            "referenceName": branch,
-            "commitId": commit,
-        },
-    }
-
-
-def ssm_event(command_id, status):
-    return {
-        "id": f"ssm-{command_id}-{status}",
-        "detail-type": "EC2 Command Status-change Notification",
-        "source": "aws.ssm",
-        "detail": {"command-id": command_id, "status": status},
-    }
-
-
-def deploy_event(deployment_id, state):
-    return {
-        "id": f"cd-{deployment_id}-{state}",
-        "detail-type": "CodeDeploy Deployment State-change Notification",
-        "source": "aws.codedeploy",
-        "detail": {"deploymentId": deployment_id, "state": state, "application": "driftgate"},
-    }
-
-
-@pytest.fixture
-def env(monkeypatch):
-    monkeypatch.setenv("AWS_DEFAULT_REGION", REGION)
-    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
-    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
-    monkeypatch.setenv("DRIFTGATE_RUN_BUCKET", BUCKET)
-    monkeypatch.setenv("DRIFTGATE_BUILD_INSTANCE_IDS", INSTANCE)
-    with mock_aws():
-        s3 = boto3.client("s3", region_name=REGION)
-        s3.create_bucket(Bucket=BUCKET)
-        cd = boto3.client("codedeploy", region_name=REGION)
-        cfg = load_config()
-        cd.create_application(applicationName=cfg.deploy.application_name)
-        cd.create_deployment_group(
-            applicationName=cfg.deploy.application_name,
-            deploymentGroupName=cfg.deploy.deployment_group_name,
-            serviceRoleArn="arn:aws:iam::123456789012:role/LabRole",
-        )
-        clock = FakeClock()
-        yield {"orc": Orchestrator(cfg, clock=clock), "s3": s3, "clock": clock, "cfg": cfg}
-
-
-def read_record(s3, run_id):
-    obj = s3.get_object(Bucket=BUCKET, Key=f"runs/{run_id}/run.json")
-    return json.loads(obj["Body"].read())
-
-
-def stage(record, name):
-    return next(s for s in record["stages"] if s["name"] == name)
-
-
-def test_push_to_main_starts_run_and_build(env):
-    out = env["orc"].handle(push_event())
+def test_push_to_main_starts_run_and_build(pipeline):
+    out = pipeline["orc"].handle(push_event())
     assert out["action"] == "run_started"
-    rec = read_record(env["s3"], out["run_id"])
+    rec = read_record(pipeline["s3"], out["run_id"])
     assert rec["schema_version"] == RUN_RECORD_SCHEMA_VERSION
     assert rec["status"] == "running"
     assert rec["trigger"]["commit_id"] == COMMIT
@@ -118,9 +45,9 @@ def test_push_to_main_starts_run_and_build(env):
     assert build["details"]["log_uri"].startswith(f"s3://{BUCKET}/runs/{out['run_id']}/")
 
 
-def test_build_command_targets_build_host_with_commit(env):
-    out = env["orc"].handle(push_event())
-    rec = read_record(env["s3"], out["run_id"])
+def test_build_command_targets_build_host_with_commit(pipeline):
+    out = pipeline["orc"].handle(push_event())
+    rec = read_record(pipeline["s3"], out["run_id"])
     ssm = boto3.client("ssm", region_name=REGION)
     cmd = ssm.list_commands(CommandId=stage(rec, "build")["details"]["command_id"])["Commands"][0]
     assert cmd["InstanceIds"] == [INSTANCE]
@@ -137,39 +64,42 @@ def test_build_command_targets_build_host_with_commit(env):
         {"source": "aws.s3", "detail-type": "Object Created", "detail": {}},
     ],
 )
-def test_irrelevant_events_are_ignored(env, event):
-    out = env["orc"].handle(event)
+def test_irrelevant_events_are_ignored(pipeline, event):
+    out = pipeline["orc"].handle(event)
     assert out["action"] == "ignored"
-    assert env["s3"].list_objects_v2(Bucket=BUCKET).get("KeyCount", 0) == 0
+    assert pipeline["s3"].list_objects_v2(Bucket=BUCKET).get("KeyCount", 0) == 0
 
 
-def test_duplicate_push_event_does_not_start_second_run(env):
-    first = env["orc"].handle(push_event(event_id="dup"))
-    second = env["orc"].handle(push_event(event_id="dup"))
+def test_duplicate_push_event_does_not_start_second_run(pipeline):
+    first = pipeline["orc"].handle(push_event(event_id="dup"))
+    second = pipeline["orc"].handle(push_event(event_id="dup"))
     assert second["action"] == "ignored"
     assert second["run_id"] == first["run_id"]
 
 
-def test_full_run_to_success_records_every_stage_with_timestamps(env):
-    orc, clock = env["orc"], env["clock"]
+def test_full_run_to_success_records_every_stage_with_timestamps(pipeline):
+    orc, clock = pipeline["orc"], pipeline["clock"]
     run_id = orc.handle(push_event())["run_id"]
-    command_id = stage(read_record(env["s3"], run_id), "build")["details"]["command_id"]
+    command_id = stage(read_record(pipeline["s3"], run_id), "build")["details"]["command_id"]
 
     clock.advance(300)
     assert orc.handle(ssm_event(command_id, "InProgress"))["action"] == "ignored"
     out = orc.handle(ssm_event(command_id, "Success"))
-    assert out["action"] == "deploy_started"
-    rec = read_record(env["s3"], run_id)
-    deployment_id = stage(rec, "deploy")["details"]["deployment_id"]
+    assert out["action"] == "approval_requested"
+    rec = read_record(pipeline["s3"], run_id)
     assert stage(rec, "build")["status"] == "succeeded"
     assert stage(rec, "build")["outcome"] == "Success"
+
+    clock.advance(60)
+    assert approve_latest(pipeline, run_id)["result"] == "approved"
+    deployment_id = stage(read_record(pipeline["s3"], run_id), "deploy")["details"]["deployment_id"]
 
     clock.advance(600)
     out = orc.handle(deploy_event(deployment_id, "SUCCESS"))
     assert out["action"] == "run_finished"
-    rec = read_record(env["s3"], run_id)
+    rec = read_record(pipeline["s3"], run_id)
     assert rec["status"] == "succeeded"
-    assert [s["name"] for s in rec["stages"]] == ["source", "build", "deploy"]
+    assert [s["name"] for s in rec["stages"]] == ["source", "build", "approval", "deploy"]
     for s in rec["stages"]:
         assert s["status"] == "succeeded"
         assert s["outcome"]
@@ -177,91 +107,93 @@ def test_full_run_to_success_records_every_stage_with_timestamps(env):
         end = datetime.fromisoformat(s["ended_at"])
         assert start <= end
     assert stage(rec, "build")["ended_at"] == "2026-11-24T12:05:00+00:00"
-    assert stage(rec, "deploy")["ended_at"] == "2026-11-24T12:15:00+00:00"
-    assert rec["ended_at"] == "2026-11-24T12:15:00+00:00"
+    assert stage(rec, "approval")["ended_at"] == "2026-11-24T12:06:00+00:00"
+    assert stage(rec, "deploy")["ended_at"] == "2026-11-24T12:16:00+00:00"
+    assert rec["ended_at"] == "2026-11-24T12:16:00+00:00"
 
 
-def test_deploy_uses_bundle_for_commit(env):
-    orc = env["orc"]
+def test_deploy_uses_bundle_for_commit(pipeline):
+    orc = pipeline["orc"]
     run_id = orc.handle(push_event())["run_id"]
-    command_id = stage(read_record(env["s3"], run_id), "build")["details"]["command_id"]
-    orc.handle(ssm_event(command_id, "Success"))
-    deployment_id = stage(read_record(env["s3"], run_id), "deploy")["details"]["deployment_id"]
+    build_succeeds(pipeline, run_id)
+    approve_latest(pipeline, run_id)
+    deployment_id = stage(read_record(pipeline["s3"], run_id), "deploy")["details"]["deployment_id"]
     cd = boto3.client("codedeploy", region_name=REGION)
     info = cd.get_deployment(deploymentId=deployment_id)["deploymentInfo"]
     loc = info["revision"]["s3Location"]
     assert COMMIT in loc["key"]
-    assert info["deploymentGroupName"] == env["cfg"].deploy.deployment_group_name
+    assert info["deploymentGroupName"] == pipeline["cfg"].deploy.deployment_group_name
 
 
 @pytest.mark.parametrize("status", ["Failed", "TimedOut", "Cancelled"])
-def test_build_failure_stops_run_before_deploy(env, status):
-    orc = env["orc"]
+def test_build_failure_stops_run_before_deploy(pipeline, status):
+    orc = pipeline["orc"]
     run_id = orc.handle(push_event())["run_id"]
-    command_id = stage(read_record(env["s3"], run_id), "build")["details"]["command_id"]
+    command_id = stage(read_record(pipeline["s3"], run_id), "build")["details"]["command_id"]
     out = orc.handle(ssm_event(command_id, status))
     assert out["action"] == "run_finished"
-    rec = read_record(env["s3"], run_id)
+    rec = read_record(pipeline["s3"], run_id)
     assert rec["status"] == "failed"
     assert stage(rec, "build")["status"] == "failed"
     assert stage(rec, "build")["outcome"] == status
+    assert stage(rec, "approval")["status"] == "skipped"
     assert stage(rec, "deploy")["status"] == "skipped"
+    assert pipeline["sns"].published == []
     cd = boto3.client("codedeploy", region_name=REGION)
     assert cd.list_deployments()["deployments"] == []
 
 
 @pytest.mark.parametrize("state", ["FAILURE", "STOP"])
-def test_deploy_failure_marks_run_failed(env, state):
-    orc = env["orc"]
+def test_deploy_failure_marks_run_failed(pipeline, state):
+    orc = pipeline["orc"]
     run_id = orc.handle(push_event())["run_id"]
-    command_id = stage(read_record(env["s3"], run_id), "build")["details"]["command_id"]
-    orc.handle(ssm_event(command_id, "Success"))
-    deployment_id = stage(read_record(env["s3"], run_id), "deploy")["details"]["deployment_id"]
+    build_succeeds(pipeline, run_id)
+    approve_latest(pipeline, run_id)
+    deployment_id = stage(read_record(pipeline["s3"], run_id), "deploy")["details"]["deployment_id"]
     orc.handle(deploy_event(deployment_id, state))
-    rec = read_record(env["s3"], run_id)
+    rec = read_record(pipeline["s3"], run_id)
     assert rec["status"] == "failed"
     assert stage(rec, "deploy")["status"] == "failed"
     assert stage(rec, "deploy")["outcome"] == state
 
 
-def test_repeated_terminal_event_is_idempotent(env):
-    orc = env["orc"]
+def test_repeated_terminal_event_is_idempotent(pipeline):
+    orc = pipeline["orc"]
     run_id = orc.handle(push_event())["run_id"]
-    command_id = stage(read_record(env["s3"], run_id), "build")["details"]["command_id"]
+    command_id = stage(read_record(pipeline["s3"], run_id), "build")["details"]["command_id"]
     orc.handle(ssm_event(command_id, "Success"))
     again = orc.handle(ssm_event(command_id, "Success"))
     assert again["action"] == "ignored"
-    cd = boto3.client("codedeploy", region_name=REGION)
-    assert len(cd.list_deployments()["deployments"]) == 1
+    assert len(pipeline["sns"].published) == 1
 
 
-def test_unknown_command_and_deployment_ids_are_ignored(env):
-    assert env["orc"].handle(ssm_event("not-ours", "Success"))["action"] == "ignored"
-    assert env["orc"].handle(deploy_event("d-NOTOURS", "SUCCESS"))["action"] == "ignored"
+def test_unknown_command_and_deployment_ids_are_ignored(pipeline):
+    assert pipeline["orc"].handle(ssm_event("not-ours", "Success"))["action"] == "ignored"
+    assert pipeline["orc"].handle(deploy_event("d-NOTOURS", "SUCCESS"))["action"] == "ignored"
 
 
-def test_no_invocation_waits(env, monkeypatch):
+def test_no_invocation_waits(pipeline, monkeypatch):
     """FR-15: each invocation makes its transition and returns; nothing sleeps or polls."""
 
     def boom(*_a, **_k):
         raise AssertionError("orchestrator must not sleep")
 
     monkeypatch.setattr(time, "sleep", boom)
-    orc = env["orc"]
+    orc = pipeline["orc"]
     run_id = orc.handle(push_event())["run_id"]
-    command_id = stage(read_record(env["s3"], run_id), "build")["details"]["command_id"]
-    orc.handle(ssm_event(command_id, "Success"))
-    deployment_id = stage(read_record(env["s3"], run_id), "deploy")["details"]["deployment_id"]
+    build_succeeds(pipeline, run_id)
+    approve_latest(pipeline, run_id)
+    deployment_id = stage(read_record(pipeline["s3"], run_id), "deploy")["details"]["deployment_id"]
     orc.handle(deploy_event(deployment_id, "SUCCESS"))
-    assert read_record(env["s3"], run_id)["status"] == "succeeded"
+    assert read_record(pipeline["s3"], run_id)["status"] == "succeeded"
 
 
-def test_lambda_handler_entrypoint(env, monkeypatch):
+def test_lambda_handler_entrypoint(pipeline, monkeypatch):
     from orchestrator import handler
 
     out = handler.lambda_handler(push_event(event_id="entry"), None)
     assert out["action"] == "run_started"
-    assert read_record(env["s3"], out["run_id"])["trigger"]["event_id"] == "entry"
+    assert read_record(pipeline["s3"], out["run_id"])["trigger"]["event_id"] == "entry"
 
 
 def test_config_values_come_from_config_file():
@@ -286,7 +218,11 @@ def test_template_wires_eventbridge_rules_to_orchestrator():
     assert not errors
     resources = template["Resources"]
     rules = {k: v for k, v in resources.items() if v["Type"] == "AWS::Events::Rule"}
-    patterns = {k: v["Properties"]["EventPattern"] for k, v in rules.items()}
+    patterns = {
+        k: v["Properties"]["EventPattern"]
+        for k, v in rules.items()
+        if "EventPattern" in v["Properties"]
+    }
     sources = sorted(p["source"][0] for p in patterns.values())
     assert sources == ["aws.codecommit", "aws.codedeploy", "aws.ssm"]
     push = next(p for p in patterns.values() if p["source"] == ["aws.codecommit"])
