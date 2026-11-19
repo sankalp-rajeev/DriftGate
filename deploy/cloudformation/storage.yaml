@@ -2,7 +2,8 @@ AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
   DriftGate persistent storage stack, driftgate-storage (PRD 6.8, NFR-05). One S3
   bucket for models, reference logits, bundles, run records and build logs, with
-  versioning, SSE-S3, Block Public Access, bucket-owner-enforced ownership and the
+  versioning, a lifecycle (noncurrent versions 7 days, incomplete uploads 1 day,
+  current versions kept), SSE-S3, Block Public Access, bucket-owner-enforced ownership and the
   bucket policy from iam/s3-bucket-policy.json (account-only, TLS-only,
   encrypted puts only). Not part of the per-session network stack, so `make down`
   never deletes stored data; created and deleted with `make storage-up` and
@@ -40,6 +41,18 @@ Resources:
       OwnershipControls:
         Rules:
           - ObjectOwnership: BucketOwnerEnforced
+      # PRD 6.8: noncurrent versions expire after 7 days; incomplete multipart uploads are
+      # aborted after 1 day; current versions never expire (no ExpirationInDays/ExpirationDate).
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireNoncurrentVersions
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 7
+          - Id: AbortIncompleteMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
       Tags:
         - Key: Project
           Value: !Ref ProjectTag
