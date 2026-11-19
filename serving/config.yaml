@@ -17,7 +17,7 @@ server:
   parallel: 1        # single-tenant serving (PRD Section 2, RQ3)
   metrics: true      # FR-01: Prometheus text on /metrics
 context:
-  ctx_size: 32768    # 0 in llama.cpp means "from model"; Qwen2.5 trains at 32768
+  ctx_size: 4096     # PRD Section 6.8
 cache:
   type_k: f16
   type_v: f16
