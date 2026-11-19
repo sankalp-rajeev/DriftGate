@@ -60,7 +60,7 @@ def test_build_success_publishes_email_with_both_links(pipeline):
     st = stage(rec, "approval")
     assert st["status"] == "running"
     assert links["approve"][1]["token"] not in str(rec)
-    assert st["details"]["deadline"] == "2026-11-24T13:00:00+00:00"
+    assert st["details"]["deadline"] == "2026-11-24T12:30:00+00:00"
     assert deployments(pipeline) == []
 
 
@@ -176,10 +176,24 @@ def test_approval_lambda_entrypoint(pipeline):
     assert read_record(pipeline["s3"], run_id)["status"] == "failed"
 
 
-def test_timeout_is_a_labelled_config_placeholder():
+def test_timeout_is_1800_seconds_per_prd_6_8():
     cfg = load_config(ROOT / "orchestrator" / "config.json")
-    assert cfg.approval.timeout_seconds > 0
-    assert "PLACEHOLDER" in cfg.raw["approval"]["timeout_seconds_note"]
+    assert cfg.approval.timeout_seconds == 1800
+
+
+def test_token_expires_with_the_timeout(pipeline):
+    """A valid token is accepted one second before the deadline and refused at it."""
+    run_id = started_run(pipeline)
+    pipeline["clock"].advance(1800 - 1)
+    assert click(pipeline, "approve")["statusCode"] == 200
+    assert stage(read_record(pipeline["s3"], run_id), "approval")["outcome"] == "approved"
+
+
+def test_sweep_schedule_is_every_5_minutes():
+    from cfnlint.decode import decode
+
+    tpl, _ = decode(str(ROOT / "orchestrator" / "template.yaml"))
+    assert tpl["Parameters"]["ApprovalSweepSchedule"]["Default"] == "rate(5 minutes)"
 
 
 @pytest.fixture
