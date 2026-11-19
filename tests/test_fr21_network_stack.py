@@ -280,3 +280,9 @@ def test_make_up_and_down_are_single_commands(target, expected):
     assert "driftgate-storage" not in result.stdout
     if target == "up":
         assert "network.yaml" in result.stdout
+
+
+def test_target_group_deregistration_delay_30s(template):
+    tg = template["Resources"]["ServingTargetGroup"]["Properties"]
+    attrs = {a["Key"]: a["Value"] for a in tg["TargetGroupAttributes"]}
+    assert attrs["deregistration_delay.timeout_seconds"] == "30"
