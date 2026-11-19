@@ -1,7 +1,9 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup test lint fmt models verify serve gate reference fault up down storage-up storage-down obs-up obs-down orchestrator-zip unlock
+.PHONY: help setup test lint fmt models verify serve gate reference fault study study-status up down storage-up storage-down obs-up obs-down orchestrator-zip unlock
 
 # Keep the project venv isolated from any PYTHONPATH set by the shell (e.g. a sourced ROS setup).
+STOP_AT ?=
+
 unexport PYTHONPATH
 
 # Per-session network stack (FR-21). `make up` / `make down` call AWS: run them only in a Lab session.
@@ -45,6 +47,12 @@ fault: ## Build a fault bundle and log its diff (F=AA|F1|F2|F3|F4, OUT=dir, defa
 
 serve: ## Run llama-server from serving/config.yaml (CONFIG=... to override)
 	uv run python -m gate.serve --config $(or $(CONFIG),serving/config.yaml)
+
+study: ## Overnight study, resumable and time-boxed (STOP_AT=07:00; needs the pre-registration on main)
+	uv run python -m analysis.study --stop-at $(STOP_AT)
+
+study-status: ## Progress of the study
+	uv run python -m analysis.study --status; tail -n 5 $$(ls -d runs/*-study | tail -1)/study.log
 
 orchestrator-zip: ## Package the orchestrator Lambda (committed HEAD) to artifacts/orchestrator.zip
 	mkdir -p artifacts && git archive --format=zip -o artifacts/orchestrator.zip HEAD orchestrator/

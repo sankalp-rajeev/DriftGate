@@ -70,6 +70,24 @@ def analyse(points: list[dict]) -> dict:
     }
 
 
+def points_from_runs(reference: dict, sweep: dict[str, dict]) -> list[dict]:
+    """Sweep points from one run per model: {name: run measurement with `d2` metrics attached}.
+
+    `mean_kld` is D2's mean KLD; `accuracy_drop` is reference minus candidate accuracy over the
+    candidate's D5 items (paired, by id).
+    """
+    from gate import d5
+
+    return [
+        {
+            "name": name,
+            "mean_kld": m["d2"]["mean_kld"],
+            "accuracy_drop": d5.metrics(reference["d5"], m["d5"])["accuracy_drop"],
+        }
+        for name, m in sweep.items()
+    ]
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="analysis.rq2", description=__doc__.splitlines()[0])
     p.add_argument("--points", type=Path, required=True)

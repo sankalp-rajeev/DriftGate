@@ -1,30 +1,31 @@
 """A/A threshold calibration (FR-12, pre-registered rule in PRD Section 6.8).
 
-Input: a directory of A/A runs from `python -m faults.aa` at budget 256, files
-`run-NN.measurement.json` (a run at budget 256 covers 16 and 64, which are prefixes of the same
-files), plus the reference measurement. Runs 0..19 calibrate; runs 20..29 are held out.
+Input: a directory of A/A runs from `python -m faults.aa --level L3 --d2`, files
+`run-NN.measurement.json` and `run-NN.d2.json`, plus the reference measurement. One run at L3
+(D3 64 + D5 256) covers L2 (32 + 128) and L1 (16 + 64): levels are prefixes of the same files.
+Runs 0..19 calibrate; runs 20..29 are held out.
 
-Rule, per statistic and per budget:
-  * threshold = the worst A/A value among the calibration runs, no margin. "Worst" is the maximum
-    of the oriented statistic (upper-type metrics as they are; agreement-type metrics as
-    1 - value, so the threshold is the minimum agreement).
-  * fail means strictly above the threshold. By exchangeability the per-statistic false-alarm
-    rate is at most 1/(n+1) = 1/21, about 4.8%.
-  * An upper threshold is never negative: a negative worst statistic (the candidate beat the
-    reference in every A/A run) is recorded as 0. If every A/A value is zero, the threshold is
-    zero and any change fails; that is the RQ3 result.
-  * The held-out runs estimate the real rate: the share of held-out runs where a detector (any
-    of its statistics) or the gate (any detector) exceeds its threshold, with a Clopper-Pearson
-    95% interval.
+One gating statistic per detector (everything else is reported, never gated):
+D2 mean KLD; D3 1 - mean agreement share; D5 accuracy drop (reference - candidate); D6 p95
+inter-token latency ratio to the reference. D1 is pass/fail.
 
-Outputs (in --out-dir): thresholds-<budget>.json (schema driftgate.thresholds/2, never edited by
-hand) and calibration.json (thresholds, held-out false-alarm rates with intervals, wall-clock).
-The ValidateService budget is the smallest budget whose held-out false-alarm rate is at most
-`--target-fpr` for every detector and whose gate wall-clock is within `--wall-clock-limit-s`.
-`--write-thresholds` installs that budget's file as gate/thresholds.json.
+Rule, per detector and per level:
+  * threshold = the worst A/A value among the calibration runs, no margin; fail means strictly
+    above it. By exchangeability the per-detector false-alarm rate is at most 1/(n+1) = 1/21.
+  * An upper threshold is never negative: a negative worst value is recorded as 0. If every A/A
+    value is zero the threshold is zero and any change fails (the RQ3 result).
+  * The held-out runs count false alarms per detector. The gate-level rate (any detector firing)
+    is reported with a Clopper-Pearson 95% interval; no bound is claimed for it.
+  * A level is eligible unless a detector has 2 or more false alarms in the held-out runs. The
+    ValidateService level is the smallest eligible one. NFR-01 is checked separately, with one
+    timed gate run at that level on a t3.large in the Lab, not with timings from these runs.
 
-  python -m analysis.calibrate --runs runs/2026-11-21-aa --reference <measurement.json> \\
-      --out-dir runs/2026-11-21-aa/calibration
+Outputs (in --out-dir): thresholds-<level>.json (schema driftgate.thresholds/2, never edited by
+hand) and calibration.json. `--write-thresholds` installs the selected level's file as
+gate/thresholds.json.
+
+  python -m analysis.calibrate --runs runs/2026-11-21-study/aa --reference <measurement.json> \\
+      --out-dir runs/2026-11-21-study/calibration
 """
 
 from __future__ import annotations
@@ -40,26 +41,36 @@ from pathlib import Path
 from gate import cli
 from gate.score import THRESHOLDS_SCHEMA
 
-BUDGETS = (16, 64, 256)
+# Budget levels (PRD Section 6.8; mirrored in gate/config.yaml `levels`): (D3 prompts, D5 items).
+LEVELS = {"L1": (16, 64), "L2": (32, 128), "L3": (64, 256)}
 N_CALIBRATION = 20
 N_HELD_OUT = 10
-# (detector, metric inside the detector's verdict block, kind)
+MAX_FALSE_ALARMS = 1  # a level is eligible unless a detector has 2 or more
+# Gating statistics: (detector, metric, kind). One per detector.
 STATISTICS = (
+    ("D2", "mean_kld", "upper"),
     ("D3", "mean_agreement_share", "agreement"),
-    ("D3", "mean_approx_kl", "upper"),
-    ("D3", "p95_approx_kl", "upper"),
     ("D5", "accuracy_drop", "upper"),
-    ("D6", "ratio.p95_ttft_ms", "upper"),
     ("D6", "ratio.p95_itl_ms", "upper"),
+)
+# Reported, never gated.
+REPORTED = (
+    ("D2", "p99_kld"),
+    ("D2", "same_top_p_pct"),
+    ("D3", "mean_approx_kl"),
+    ("D3", "p95_approx_kl"),
+    ("D5", "delta_accuracy"),
+    ("D6", "ratio.p95_ttft_ms"),
 )
 
 
-def at_budget(m: dict, budget: int) -> dict:
-    """The measurement restricted to its first `budget` D3 prompts and D5 items."""
+def at_budget(m: dict, level: str) -> dict:
+    """The measurement restricted to the first D3 prompts and D5 items of `level`."""
+    n3, n5 = LEVELS[level]
     out = copy.copy(m)
-    out["budget"] = budget
-    out["d3"] = m["d3"][:budget]
-    out["d5"] = m["d5"][:budget]
+    out["budget"], out["d5_budget"] = n3, n5
+    out["d3"] = m["d3"][:n3]
+    out["d5"] = m["d5"][:n5]
     return out
 
 
@@ -69,10 +80,24 @@ def _lookup(obj: dict, dotted: str):
     return obj
 
 
-def statistics(reference: dict, candidate: dict, budget: int) -> dict:
-    """{(detector, metric): value} for one run at one budget."""
-    dets = cli.detectors(at_budget(reference, budget), at_budget(candidate, budget))
-    return {(d, m): _lookup(dets[d], m) for d, m, _ in STATISTICS}
+def statistics(reference: dict, candidate: dict, level: str, reported: bool = False) -> dict:
+    """{(detector, metric): value} for one run at one level.
+
+    D2 appears only for runs that have D2 results (`candidate["d2"]`, the metrics of
+    `gate.d2 run`); D3, D5 and D6 only when the run measured D3.
+    """
+    out: dict = {}
+    wanted = {(d, m) for d, m, _ in STATISTICS} | (set(REPORTED) if reported else set())
+    if candidate.get("d3"):
+        dets = cli.detectors(at_budget(reference, level), at_budget(candidate, level))
+        for d, m in wanted:
+            if d != "D2":
+                out[(d, m)] = _lookup(dets[d], m)
+    if candidate.get("d2"):
+        for d, m in wanted:
+            if d == "D2" and m in candidate["d2"]:
+                out[(d, m)] = candidate["d2"][m]
+    return out
 
 
 def oriented(kind: str, value: float) -> float:
@@ -109,81 +134,98 @@ def clopper_pearson(k: int, n: int, level: float = 0.95) -> tuple[float, float]:
     return lower, upper
 
 
-def gate_seconds(m: dict, budget: int) -> float | None:
-    """Generation time of the first `budget` D3 prompts, from llama-server timings."""
-    try:
-        return sum(
-            (r["timings"]["prompt_ms"] + r["timings"]["predicted_ms"]) / 1000
-            for r in m["d3"][:budget]
-        )
-    except KeyError:
-        return None
+def rules_by_detector(rules: list[dict]) -> dict[str, list[dict]]:
+    out: dict[str, list[dict]] = {}
+    for r in rules:
+        out.setdefault(r["detector"], []).append(r)
+    return out
+
+
+def fired(stats: dict, rules: list[dict], d1_ok: bool | None = None) -> dict[str, bool | None]:
+    """{detector: fires?}; None when the run has no result for that detector."""
+    out: dict[str, bool | None] = {}
+    for det, rs in rules_by_detector(rules).items():
+        if all((det, r["metric"]) in stats for r in rs):
+            out[det] = any(exceeds(r["kind"], stats[(det, r["metric"])], r["value"]) for r in rs)
+        else:
+            out[det] = None
+    if d1_ok is not None:
+        out["D1"] = not d1_ok
+    return out
 
 
 def calibrate(
     reference: dict,
     runs: list[dict],
-    budgets=BUDGETS,
+    levels=tuple(LEVELS),
     n_calibration: int = N_CALIBRATION,
     n_held_out: int = N_HELD_OUT,
 ) -> dict:
     if len(runs) < n_calibration + n_held_out:
         raise ValueError(f"need {n_calibration + n_held_out} A/A runs, found {len(runs)}")
     cal, held = runs[:n_calibration], runs[n_calibration : n_calibration + n_held_out]
-    result = {"n_calibration": len(cal), "n_held_out": len(held), "budgets": {}}
-    for b in budgets:
-        stats_cal = [statistics(reference, m, b) for m in cal]
-        stats_held = [statistics(reference, m, b) for m in held]
+    if any(not m.get("d2") for m in cal + held):
+        raise ValueError("every A/A run needs D2 results (run faults.aa with --d2)")
+    result = {"n_calibration": len(cal), "n_held_out": len(held), "levels": {}}
+    for lv in levels:
+        stats_cal = [statistics(reference, m, lv, reported=True) for m in cal]
+        stats_held = [statistics(reference, m, lv) for m in held]
         rules = []
         for det, metric, kind in STATISTICS:
             value = threshold_value(kind, [s[(det, metric)] for s in stats_cal])
             rules.append({"detector": det, "metric": metric, "kind": kind, "value": value})
-        by_det: dict[str, list[dict]] = {}
-        for r in rules:
-            by_det.setdefault(r["detector"], []).append(r)
-        fa = {d: 0 for d in by_det} | {"gate": 0}
-        for s in stats_held:
-            fired = {
-                d: any(exceeds(r["kind"], s[(d, r["metric"])], r["value"]) for r in rs)
-                for d, rs in by_det.items()
+        reported = {
+            f"{d}.{m}": {
+                "min": min(s[(d, m)] for s in stats_cal),
+                "max": max(s[(d, m)] for s in stats_cal),
             }
-            for d, hit in fired.items():
-                fa[d] += hit
-            fa["gate"] += any(fired.values())
+            for d, m in REPORTED
+        }
+        dets = list(rules_by_detector(rules))
+        counts = {d: 0 for d in dets} | {"gate": 0}
+        for s, m in zip(stats_held, held, strict=True):
+            hits = fired(s, rules, m.get("d1_ok"))
+            for d, hit in hits.items():
+                counts[d] = counts.get(d, 0) + bool(hit)
+            counts["gate"] += any(hits.values())
         n = len(held)
-        secs = [gate_seconds(m, b) for m in runs]
-        secs = [x for x in secs if x is not None]
-        result["budgets"][str(b)] = {
+        result["levels"][lv] = {
+            "d3_prompts": LEVELS[lv][0],
+            "d5_items": LEVELS[lv][1],
             "rules": rules,
+            "reported_aa_range": reported,
             "held_out_false_alarms": {
-                d: {
-                    "k": k,
-                    "n": n,
-                    "rate": k / n,
-                    "ci95": list(clopper_pearson(k, n)),
-                }
-                for d, k in fa.items()
+                d: {"k": k, "n": n, "rate": k / n, "ci95": list(clopper_pearson(k, n))}
+                for d, k in counts.items()
             },
-            "per_statistic_bound": 1 / (len(cal) + 1),
-            "gate_seconds_mean": sum(secs) / len(secs) if secs else None,
+            "per_detector_bound": 1 / (len(cal) + 1),
+            "gate_bound": None,  # no bound is claimed for the gate-level rate
         }
     return result
 
 
-def select_budget(result: dict, target_fpr: float, wall_clock_limit_s: float) -> int | None:
-    """Smallest budget with every detector's held-out rate <= target and wall-clock in limit."""
-    for b in sorted(int(x) for x in result["budgets"]):
-        info = result["budgets"][str(b)]
-        rates = [v["rate"] for d, v in info["held_out_false_alarms"].items() if d != "gate"]
-        secs = info["gate_seconds_mean"]
-        if all(r <= target_fpr for r in rates) and (secs is None or secs <= wall_clock_limit_s):
-            return b
+def select_level(result: dict) -> str | None:
+    """Smallest level where no detector has 2 or more held-out false alarms."""
+    for lv in sorted(result["levels"], key=lambda x: LEVELS[x]):
+        fa = result["levels"][lv]["held_out_false_alarms"]
+        if all(v["k"] <= MAX_FALSE_ALARMS for d, v in fa.items() if d != "gate"):
+            return lv
     return None
 
 
 def load_runs(directory: Path) -> list[dict]:
-    files = sorted(directory.glob("run-*.measurement.json"))
-    return [json.loads(f.read_text()) for f in files]
+    """Run measurements in order, with `d2` (metrics) and `d1_ok` attached when present."""
+    runs = []
+    for f in sorted(directory.glob("run-*.measurement.json")):
+        m = json.loads(f.read_text())
+        stem = f.name.removesuffix(".measurement.json")
+        d2_file, d1_file = f.with_name(f"{stem}.d2.json"), f.with_name(f"{stem}.d1.json")
+        if d2_file.exists():
+            m["d2"] = json.loads(d2_file.read_text())["metrics"]
+        if d1_file.exists():
+            m["d1_ok"] = json.loads(d1_file.read_text())["ok"]
+        runs.append(m)
+    return runs
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -191,27 +233,23 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--runs", type=Path, required=True, help="directory of A/A run files")
     p.add_argument("--reference", type=Path, required=True, help="reference measurement.json")
     p.add_argument("--out-dir", type=Path, required=True)
-    p.add_argument("--target-fpr", type=float, default=0.05)
-    p.add_argument("--wall-clock-limit-s", type=float, default=600.0, help="NFR-01 (10 minutes)")
     p.add_argument("--write-thresholds", type=Path, nargs="?", const=Path("gate/thresholds.json"))
     args = p.parse_args(argv)
     reference = json.loads(args.reference.read_text())
     result = calibrate(reference, load_runs(args.runs))
-    result["target_fpr"] = args.target_fpr
-    result["wall_clock_limit_s"] = args.wall_clock_limit_s
-    result["selected_budget"] = select_budget(result, args.target_fpr, args.wall_clock_limit_s)
+    result["selected_level"] = select_level(result)
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    for b, info in result["budgets"].items():
+    for lv, info in result["levels"].items():
         doc = {"schema": THRESHOLDS_SCHEMA, "rules": info["rules"]}
-        (args.out_dir / f"thresholds-{b}.json").write_text(json.dumps(doc, indent=2) + "\n")
+        (args.out_dir / f"thresholds-{lv}.json").write_text(json.dumps(doc, indent=2) + "\n")
     (args.out_dir / "calibration.json").write_text(json.dumps(result, indent=2) + "\n")
     if args.write_thresholds:
-        if result["selected_budget"] is None:
-            print("no budget meets the target; thresholds not installed", file=sys.stderr)
+        if result["selected_level"] is None:
+            print("no level is eligible; thresholds not installed", file=sys.stderr)
             return 1
-        src = args.out_dir / f"thresholds-{result['selected_budget']}.json"
-        shutil.copy(src, args.write_thresholds)
-    print(json.dumps({"selected_budget": result["selected_budget"]}))
+        selected = args.out_dir / f"thresholds-{result['selected_level']}.json"
+        shutil.copy(selected, args.write_thresholds)
+    print(json.dumps({"selected_level": result["selected_level"]}))
     return 0
 
 

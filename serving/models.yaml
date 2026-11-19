@@ -21,6 +21,22 @@ models:
     repo: Qwen/Qwen2.5-1.5B-Instruct-GGUF
     commit: 91cad51170dc346986eccefdc2dd33a9da36ead9
     license: Apache-2.0
+  # RQ2 quantization sweep (analysis only, PRD Section 6.8); Q4_K_M and Q2_K are the F1 and F2 files.
+  - file: qwen2.5-1.5b-instruct-q6_k.gguf
+    role: sweep-q6-k
+    repo: Qwen/Qwen2.5-1.5B-Instruct-GGUF
+    commit: 91cad51170dc346986eccefdc2dd33a9da36ead9
+    license: Apache-2.0
+  - file: qwen2.5-1.5b-instruct-q5_k_m.gguf
+    role: sweep-q5-k-m
+    repo: Qwen/Qwen2.5-1.5B-Instruct-GGUF
+    commit: 91cad51170dc346986eccefdc2dd33a9da36ead9
+    license: Apache-2.0
+  - file: qwen2.5-1.5b-instruct-q3_k_m.gguf
+    role: sweep-q3-k-m
+    repo: Qwen/Qwen2.5-1.5B-Instruct-GGUF
+    commit: 91cad51170dc346986eccefdc2dd33a9da36ead9
+    license: Apache-2.0
   - file: qwen2.5-0.5b-instruct-q8_0.gguf
     role: ci
     repo: Qwen/Qwen2.5-0.5B-Instruct-GGUF
