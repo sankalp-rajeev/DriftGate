@@ -42,6 +42,32 @@
       "Resource": "arn:aws:ssm:${Region}::document/AWS-RunShellScript"
     },
     {
+      "Sid": "StartStopBuildHostOnly",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:StartInstances",
+        "ec2:StopInstances"
+      ],
+      "Resource": "arn:aws:ec2:${Region}:${AccountId}:instance/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Role": "build-host"
+        }
+      }
+    },
+    {
+      "Sid": "FindBuildHost",
+      "Effect": "Allow",
+      "Action": "ec2:DescribeInstances",
+      "Resource": "*"
+    },
+    {
+      "Sid": "BuildHostSsmOnlineStatus",
+      "Effect": "Allow",
+      "Action": "ssm:DescribeInstanceInformation",
+      "Resource": "*"
+    },
+    {
       "Sid": "ApprovalEmail",
       "Effect": "Allow",
       "Action": "sns:Publish",

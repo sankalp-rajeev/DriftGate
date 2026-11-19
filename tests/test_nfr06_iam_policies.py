@@ -17,6 +17,7 @@ NO_RESOURCE_LEVEL = {
     "ssm:UpdateInstanceInformation",
     "ssm:GetCommandInvocation",
     "ssm:ListCommandInvocations",
+    "ssm:DescribeInstanceInformation",
     "ssmmessages:CreateControlChannel",
     "ssmmessages:CreateDataChannel",
     "ssmmessages:OpenControlChannel",
