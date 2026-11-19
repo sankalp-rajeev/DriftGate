@@ -2,21 +2,74 @@
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "RecordDecision",
+      "Sid": "RunRecordsAndLock",
       "Effect": "Allow",
-      "Action": ["s3:GetObject", "s3:PutObject"],
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
       "Resource": "arn:aws:s3:::${ArtifactBucket}/runs/*"
     },
     {
-      "Sid": "HandBackToOrchestrator",
+      "Sid": "ListRunRecords",
       "Effect": "Allow",
-      "Action": "lambda:InvokeFunction",
-      "Resource": "arn:aws:lambda:${Region}:${AccountId}:function:${OrchestratorFunction}"
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::${ArtifactBucket}",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": [
+            "runs/*"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "RunBuildOnBuildHostOnly",
+      "Effect": "Allow",
+      "Action": "ssm:SendCommand",
+      "Resource": "arn:aws:ec2:${Region}:${AccountId}:instance/*",
+      "Condition": {
+        "StringEquals": {
+          "ssm:resourceTag/Role": "build-host"
+        }
+      }
+    },
+    {
+      "Sid": "RunShellScriptDocumentOnly",
+      "Effect": "Allow",
+      "Action": "ssm:SendCommand",
+      "Resource": "arn:aws:ssm:${Region}::document/AWS-RunShellScript"
+    },
+    {
+      "Sid": "StartDeployment",
+      "Effect": "Allow",
+      "Action": "codedeploy:CreateDeployment",
+      "Resource": "arn:aws:codedeploy:${Region}:${AccountId}:deploymentgroup:${CodeDeployApp}/${DeploymentGroup}"
+    },
+    {
+      "Sid": "DeploymentConfig",
+      "Effect": "Allow",
+      "Action": "codedeploy:GetDeploymentConfig",
+      "Resource": "arn:aws:codedeploy:${Region}:${AccountId}:deploymentconfig:CodeDeployDefault.OneAtATime"
+    },
+    {
+      "Sid": "RegisterRevision",
+      "Effect": "Allow",
+      "Action": [
+        "codedeploy:RegisterApplicationRevision",
+        "codedeploy:GetApplicationRevision"
+      ],
+      "Resource": "arn:aws:codedeploy:${Region}:${AccountId}:application:${CodeDeployApp}"
     },
     {
       "Sid": "OwnLogs",
       "Effect": "Allow",
-      "Action": ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"],
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
       "Resource": "arn:aws:logs:${Region}:${AccountId}:log-group:/aws/lambda/${ApprovalFunction}:*"
     }
   ]
