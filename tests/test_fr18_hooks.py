@@ -95,6 +95,7 @@ def sandbox(tmp_path):
             DRIFTGATE_RUN_DIR=str(run_dir),
             DRIFTGATE_HEALTH_TIMEOUT_S="4",
             DRIFTGATE_SYSTEMD="0",
+            DRIFTGATE_PUBLISH_METRICS="0",
             DRIFTGATE_BUCKET="",
             DEPLOYMENT_ID="d-TEST",
             LIFECYCLE_EVENT="ValidateService",

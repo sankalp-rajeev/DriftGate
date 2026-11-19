@@ -1,0 +1,64 @@
+{
+  "widgets": [
+    {
+      "type": "metric", "x": 0, "y": 0, "width": 12, "height": 6,
+      "properties": {
+        "title": "Gate score (fail above 1; enforce mode only)",
+        "region": "${AWS::Region}",
+        "view": "timeSeries",
+        "stat": "Maximum",
+        "period": 60,
+        "metrics": [["DriftGate", "GateScore", "DeploymentGroup", "${DeploymentGroupName}"]],
+        "annotations": {"horizontal": [{"label": "rollback above 1", "value": 1}]},
+        "yAxis": {"left": {"min": 0}}
+      }
+    },
+    {
+      "type": "alarm", "x": 12, "y": 0, "width": 12, "height": 6,
+      "properties": {
+        "title": "Rollback alarm state",
+        "alarms": ["${GateScoreAlarmArn}"]
+      }
+    },
+    {
+      "type": "metric", "x": 0, "y": 6, "width": 12, "height": 6,
+      "properties": {
+        "title": "ALB target health (serving target group)",
+        "region": "${AWS::Region}",
+        "view": "timeSeries",
+        "period": 60,
+        "metrics": [
+          ["AWS/ApplicationELB", "HealthyHostCount", "TargetGroup", "${TargetGroupFullName}", "LoadBalancer", "${LoadBalancerFullName}", {"stat": "Minimum"}],
+          ["AWS/ApplicationELB", "UnHealthyHostCount", "TargetGroup", "${TargetGroupFullName}", "LoadBalancer", "${LoadBalancerFullName}", {"stat": "Maximum"}]
+        ],
+        "yAxis": {"left": {"min": 0}}
+      }
+    },
+    {
+      "type": "log", "x": 12, "y": 6, "width": 12, "height": 6,
+      "properties": {
+        "title": "Deployment status (CodeDeploy state changes)",
+        "region": "${AWS::Region}",
+        "view": "table",
+        "query": "SOURCE '${DeploymentEventsLogGroup}' | fields @timestamp, detail.deploymentId, detail.state, detail.instanceGroupId | sort @timestamp desc | limit 20"
+      }
+    },
+    {
+      "type": "metric", "x": 0, "y": 12, "width": 24, "height": 6,
+      "properties": {
+        "title": "Raw detector values (always published)",
+        "region": "${AWS::Region}",
+        "view": "timeSeries",
+        "stat": "Maximum",
+        "period": 60,
+        "metrics": [
+          ["DriftGate", "D3MeanAgreementShare", "DeploymentGroup", "${DeploymentGroupName}"],
+          ["DriftGate", "D3P95ApproxKL", "DeploymentGroup", "${DeploymentGroupName}"],
+          ["DriftGate", "D5DeltaAccuracy", "DeploymentGroup", "${DeploymentGroupName}"],
+          ["DriftGate", "D6TtftRatio", "DeploymentGroup", "${DeploymentGroupName}"],
+          ["DriftGate", "D6ItlRatio", "DeploymentGroup", "${DeploymentGroupName}"]
+        ]
+      }
+    }
+  ]
+}
