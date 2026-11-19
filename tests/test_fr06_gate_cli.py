@@ -29,6 +29,8 @@ DECISION_KEYS = {
     "configured_mode",
     "thresholds_file",
     "rules",
+    "scores",
+    "gate_score",
     "passed",
     "forced_fail",
     "exit_code",
@@ -39,6 +41,7 @@ D5_KEYS = {
     "reference_accuracy",
     "candidate_accuracy",
     "delta_accuracy",
+    "accuracy_drop",
     "ci95",
     "bootstrap",
     "mcnemar",
@@ -85,7 +88,7 @@ CAND = _measurement([[1, 2, 3], [4, 7, 8]], [False, False], prompt_ms=80.0)
 
 def _check_schema(v):
     assert set(v) == VERDICT_KEYS
-    assert v["schema"] == "driftgate.verdict/1"
+    assert v["schema"] == "driftgate.verdict/2"
     assert set(v["detectors"]) == {"D3", "D5", "D6"}
     assert set(v["detectors"]["D3"]) == D3_KEYS
     assert set(v["detectors"]["D5"]) == D5_KEYS
@@ -110,7 +113,7 @@ def _files(tmp_path, mode="auto", thresholds=None):
 
 
 def _thresholds(value):
-    rule = {"detector": "D3", "metric": "mean_agreement_share", "op": ">=", "value": value}
+    rule = {"detector": "D3", "metric": "mean_agreement_share", "kind": "agreement", "value": value}
     return {"schema": cli.THRESHOLDS_SCHEMA, "rules": [rule]}
 
 
@@ -140,9 +143,12 @@ def test_auto_switches_to_enforce_when_thresholds_exist(tmp_path, monkeypatch):
     v = json.loads((tmp_path / "verdict.json").read_text())
     assert v["decision"]["mode"] == "enforce"
     assert v["decision"]["passed"] is True
-    assert cli.main(_files(tmp_path, thresholds=_thresholds(1.0))) == 1
+    assert v["decision"]["gate_score"] == pytest.approx((1 - 2 / 3) / 1)
+    assert cli.main(_files(tmp_path, thresholds=_thresholds(0.9))) == 1
     v = json.loads((tmp_path / "verdict.json").read_text())
     assert v["decision"]["passed"] is False
+    assert v["decision"]["scores"] == {"D3": pytest.approx((1 - 2 / 3) / 0.1)}
+    assert v["decision"]["gate_score"] > 1
     assert v["decision"]["rules"][0]["ok"] is False
 
 

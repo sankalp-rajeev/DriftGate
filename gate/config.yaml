@@ -1,11 +1,19 @@
 # Gate config (PRD Section 6.8). Read by `python -m gate`.
 schema_version: 1
-# report: record verdicts, exit 0. enforce: exit 1 when a rule in `thresholds` fails.
+# report: record verdicts, exit 0. enforce: exit 1 when the gate score is above 1.
 # auto: enforce once `thresholds` exists (written by A/A calibration, T-15), report until then.
 mode: auto
 thresholds: gate/thresholds.json
-# Reference measurement (`python -m gate measure` on the reference serving config, budget 256).
-reference: artifacts/reference/measurement.json
+# Reference measurement and D2 reference logits (PRD Section 6.8), stored under
+#   <local_root>/reference/<model-sha256>/<config-hash>/<instance-type>/   (see gate/reference.py)
+# `python -m gate reference` writes measurement.json there; `gate.d2 base` writes d2_base.kld.
+# `reference` set to a file path overrides the store (tests, one-off comparisons).
+reference: null
+reference_store:
+  local_root: artifacts
+  s3_uri: null          # e.g. s3://<bucket>; used only with an explicit --upload
+  key: null             # pinned reference key for candidates; null = key of the given config
+  budget: 256           # largest PRD budget (16, 64, 256), so every budget's items are covered
 data:
   d3_prompts: gate/data/d3_prompts.jsonl
   # DEVELOPMENT FIXTURE, not frozen data: the 177-item panel from the earlier 2,000-question
@@ -15,4 +23,5 @@ data:
 d2:
   corpus: gate/data/d2_corpus.txt
   ctx_size: 512
-  base_logits: artifacts/reference/d2_base.kld   # never in git; S3 for the build host
+  threads: 2            # always, on every machine (PRD Section 6.8; t3.large vCPU count)
+  # Reference logits live under the reference key (reference_store above) as d2_base.kld.

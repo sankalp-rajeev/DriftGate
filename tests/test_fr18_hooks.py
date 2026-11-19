@@ -125,7 +125,8 @@ def run_hook(name, env):
 
 
 def write_thresholds(path):
-    rule = {"detector": "D3", "metric": "mean_agreement_share", "op": ">=", "value": 1.0}
+    # Placeholder value that only exercises enforce (not a calibrated threshold); schema v2.
+    rule = {"detector": "D3", "metric": "mean_agreement_share", "kind": "agreement", "value": 0.99}
     path.write_text(json.dumps({"schema": cli.THRESHOLDS_SCHEMA, "rules": [rule]}))
 
 
