@@ -9,10 +9,12 @@ thresholds: gate/thresholds.json
 # `python -m gate reference` writes measurement.json there; `gate.d2 base` writes d2_base.kld.
 # `reference` set to a file path overrides the store (tests, one-off comparisons).
 reference: null
+# The approved reference release (model SHA-256 and config hash). Only a human edits this file.
+# Candidates are always compared against its reference (PRD Section 6.8).
+baseline: gate/baseline.yaml
 reference_store:
   local_root: artifacts
   s3_uri: null          # e.g. s3://<bucket>; used only with an explicit --upload
-  key: null             # pinned reference key for candidates; null = key of the given config
   budget: 256           # largest PRD budget (16, 64, 256), so every budget's items are covered
 data:
   d3_prompts: gate/data/d3_prompts.jsonl

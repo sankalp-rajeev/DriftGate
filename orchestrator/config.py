@@ -51,11 +51,11 @@ class DeployConfig:
 
 @dataclass(frozen=True)
 class ReferenceConfig:
-    # PRD 6.8 automatic reference run. `key` is an explicit input: the reference key the
-    # gate compares candidates against (reference/<model-sha256>/<config-hash>/<instance-type>/).
-    # How candidates get the reference revision's key is an open owner decision (pin it in
-    # gate/config.yaml or pass --reference-key), so the orchestrator never derives it; empty
-    # `key` or `revision` disables the automatic reference run.
+    # PRD 6.8 automatic reference run. `key` is the baseline's reference key, copied by the owner
+    # from `python -m gate reference --print-key` on the build host's instance type
+    # (reference/<baseline model sha>/<baseline config hash>/<instance-type>/; gate/baseline.yaml
+    # pins the first two parts). The Lambda package has no gate/ code, so it does not derive it;
+    # empty `key` or `revision` disables the automatic reference run.
     key: str
     # Git revision (commit, branch or tag) that is the reference; checked out for the run.
     revision: str
