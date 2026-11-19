@@ -1,7 +1,7 @@
 import boto3
 import pytest
 from moto import mock_aws
-from orchestrator_helpers import APPROVAL_URL, BUCKET, INSTANCE, REGION, FakeClock, SpySNS
+from orchestrator_helpers import APPROVAL_URL, BUCKET, REGION, FakeClock, SpySNS
 
 from orchestrator.config import load_config
 from orchestrator.handler import Orchestrator
@@ -9,12 +9,13 @@ from orchestrator.handler import Orchestrator
 
 @pytest.fixture
 def pipeline(monkeypatch):
-    """Mocked Lab account with the run bucket, CodeDeploy group and approval topic."""
+    """Mocked Lab account: run bucket, CodeDeploy group, approval topic and a running build
+    host (tag Role=build-host). moto does not implement ssm:DescribeInstanceInformation, so SSM
+    online status comes from the `ssm_online` set (the host starts online)."""
     monkeypatch.setenv("AWS_DEFAULT_REGION", REGION)
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
     monkeypatch.setenv("DRIFTGATE_RUN_BUCKET", BUCKET)
-    monkeypatch.setenv("DRIFTGATE_BUILD_INSTANCE_IDS", INSTANCE)
     monkeypatch.setenv("DRIFTGATE_APPROVAL_URL", APPROVAL_URL)
     with mock_aws():
         s3 = boto3.client("s3", region_name=REGION)
@@ -30,6 +31,19 @@ def pipeline(monkeypatch):
             deploymentGroupName=cfg.deploy.deployment_group_name,
             serviceRoleArn="arn:aws:iam::123456789012:role/LabRole",
         )
+        ec2 = boto3.client("ec2", region_name=REGION)
+        host_id = ec2.run_instances(
+            ImageId="ami-12345678",
+            MinCount=1,
+            MaxCount=1,
+            TagSpecifications=[
+                {"ResourceType": "instance", "Tags": [{"Key": "Role", "Value": "build-host"}]}
+            ],
+        )["Instances"][0]["InstanceId"]
+        ssm_online = {host_id}
+        monkeypatch.setattr(
+            Orchestrator, "_ssm_online", lambda self, instance_id: instance_id in ssm_online
+        )
         clock = FakeClock()
         sns = SpySNS(sns_client)
         yield {
@@ -40,6 +54,9 @@ def pipeline(monkeypatch):
             "clock": clock,
             "cfg": cfg,
             "topic_arn": topic_arn,
+            "ec2": ec2,
+            "host_id": host_id,
+            "ssm_online": ssm_online,
         }
 
 

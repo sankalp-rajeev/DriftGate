@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup test lint fmt models verify serve gate fault up down storage-up storage-down obs-up obs-down orchestrator-zip
+.PHONY: help setup test lint fmt models verify serve gate fault up down storage-up storage-down obs-up obs-down orchestrator-zip unlock
 
 # Keep the project venv isolated from any PYTHONPATH set by the shell (e.g. a sourced ROS setup).
 unexport PYTHONPATH
@@ -45,6 +45,9 @@ serve: ## Run llama-server from serving/config.yaml (CONFIG=... to override)
 
 orchestrator-zip: ## Package the orchestrator Lambda (committed HEAD) to artifacts/orchestrator.zip
 	mkdir -p artifacts && git archive --format=zip -o artifacts/orchestrator.zip HEAD orchestrator/
+
+unlock: ## Clear a stuck run lock, marking its run abandoned (BUCKET=...; uses your AWS credentials, Lab only)
+	uv run python -m orchestrator.unlock --bucket $(BUCKET)
 
 up: ## Create or update the per-session network stack (calls AWS; Lab only)
 	aws cloudformation deploy --region $(AWS_REGION) --stack-name $(STACK_NAME) --template-file $(CFN_DIR)/network.yaml --parameter-overrides file://$(CFN_DIR)/network-params.json --tags Project=driftgate --no-fail-on-empty-changeset

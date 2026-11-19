@@ -10,6 +10,7 @@ import pytest
 from orchestrator_helpers import (
     APPROVAL_URL,
     build_succeeds,
+    host_comes_up,
     links_from,
     push_event,
     read_record,
@@ -146,13 +147,14 @@ def test_scheduled_sweep_rejects_expired_approvals_only(pipeline):
 
     clock.advance(60)
     out = orc.handle(scheduled_event())
-    assert out == {"action": "approvals_swept", "expired": [old]}
+    assert out["expired"] == [old]
     rec = read_record(pipeline["s3"], old)
     assert rec["status"] == "failed"
     assert stage(rec, "approval")["outcome"] == "timeout"
     assert stage(rec, "approval")["details"]["decision"] == "timeout"
     fresh = pipeline["orc"].store.lock_holder()
     assert fresh and fresh != old
+    host_comes_up(pipeline)
     build_succeeds(pipeline, fresh)
     # The fresh approval is within its window, so the next sweep leaves it alone.
     assert orc.handle(scheduled_event())["expired"] == []

@@ -3,8 +3,10 @@
   "branch": "main",
   "run_bucket": "",
   "run_prefix": "runs/",
+  "lock_ttl_seconds": 7200,
   "build": {
-    "instance_ids": [],
+    "host_tag": {"key": "Role", "value": "build-host"},
+    "host_idle_stop_seconds": 1800,
     "document": "AWS-RunShellScript",
     "working_directory": "/opt/driftgate",
     "commands": [

@@ -4,15 +4,26 @@ Event-driven: every invocation handles one EventBridge event, makes at most one 
 transition (one AWS start call plus a run-record write) and returns. Nothing waits on SSM or
 CodeDeploy; their status-change events invoke the function again.
 
-  CodeCommit push to the configured branch  -> new run, source done, build started (SSM);
+  CodeCommit push to the configured branch  -> new run, source done, build stage started;
                                                if a run is active, queued as "latest" instead
-  SSM command status (terminal)             -> build done; on success approval requested (SNS)
+  build stage start                         -> build host (tag Role=build-host) started if
+                                               stopped; the build command is sent (SSM) once
+                                               both its EC2 "running" state-change event and
+                                               SSM online status have arrived
+  EC2 instance state change (build host)    -> records "running"; starts the host if it was
+                                               stopping when the build needed it
+  SSM command status (terminal)             -> build done, build host stopped; on success
+                                               approval requested (SNS)
   approval decision (orchestrator/approval) -> approve starts deploy; reject ends the run
-  scheduled sweep (EventBridge rate rule)   -> approvals past their deadline are rejected
+  scheduled sweep (EventBridge rate rule)   -> approvals past their deadline are rejected;
+                                               a waiting build re-checks SSM online status; an
+                                               idle build host (> 30 min) is stopped
   CodeDeploy deployment state (terminal)    -> deploy done, run finished
 
 One active run at a time (PRD 6.8): `runs/active.json` is created with a conditional put and
-deleted when the run ends, whatever the outcome; the queued push, if any, then starts.
+deleted when the run ends, whatever the outcome; the queued push, if any, then starts. A lock
+past its `expires_at` (2 h) is stale: the next push takes it over and the old run is marked
+abandoned.
 """
 
 from __future__ import annotations
@@ -39,6 +50,7 @@ log.setLevel(logging.INFO)
 PUSH_DETAIL_TYPE = "CodeCommit Repository State Change"
 SSM_DETAIL_TYPE = "EC2 Command Status-change Notification"
 DEPLOY_DETAIL_TYPE = "CodeDeploy Deployment State-change Notification"
+EC2_STATE_DETAIL_TYPE = "EC2 Instance State-change Notification"
 SCHEDULED_DETAIL_TYPE = "Scheduled Event"
 
 PUSH_EVENTS = {"referenceCreated", "referenceUpdated"}
@@ -64,6 +76,7 @@ class Orchestrator:
         ssm=None,
         codedeploy=None,
         sns=None,
+        ec2=None,
     ):
         self.cfg = config
         self.clock = clock
@@ -71,7 +84,10 @@ class Orchestrator:
         self.ssm = ssm or boto3.client("ssm", region_name=config.region)
         self.codedeploy = codedeploy or boto3.client("codedeploy", region_name=config.region)
         self.sns = sns or boto3.client("sns", region_name=config.region)
-        self.store = rr.RunStore(self.s3, config.run_bucket, config.run_prefix)
+        self.ec2 = ec2 or boto3.client("ec2", region_name=config.region)
+        self.store = rr.RunStore(
+            self.s3, config.run_bucket, config.run_prefix, config.lock_ttl_seconds
+        )
 
     # ---- dispatch -------------------------------------------------------------------------
 
@@ -84,8 +100,14 @@ class Orchestrator:
             result = self.on_ssm_status(event)
         elif source == "aws.codedeploy" and detail_type == DEPLOY_DETAIL_TYPE:
             result = self.on_deploy_state(event)
+        elif source == "aws.ec2" and detail_type == EC2_STATE_DETAIL_TYPE:
+            result = self.on_instance_state(event)
         elif source == "aws.events" and detail_type == SCHEDULED_DETAIL_TYPE:
-            result = self.sweep_approvals()
+            result = {
+                "action": "swept",
+                "expired": self.sweep_approvals()["expired"],
+                "build_host": self.sweep_build_host(),
+            }
         else:
             result = _ignored(f"unhandled event {source}/{detail_type}")
         log.info(json.dumps({"event_id": event.get("id"), **result}))
@@ -116,19 +138,26 @@ class Orchestrator:
     def _start_or_queue(self, trigger: dict[str, Any]) -> dict[str, Any]:
         now = self.clock()
         run_id = f"{now.strftime('%Y%m%dT%H%M%SZ')}-{trigger['commit_id'][:8]}"
-        if not self.store.acquire_lock(run_id, now):
+        lock = self.store.acquire_lock(run_id, now)
+        if not lock:
             return self._queue(trigger)
+        out: dict[str, Any] = {"action": "run_started", "run_id": run_id}
+        if lock.stale:
+            stale_id = lock.stale["run_id"]
+            reason = f"stale lock (expired {rr.iso(self.store.lock_expires_at(lock.stale))})"
+            self.store.abandon(stale_id, reason, now)
+            out["abandoned_run_id"] = stale_id
         try:
             record = rr.new_record(run_id, trigger, self.STAGES, now)
             rr.start_stage(record, "source", now)
             rr.end_stage(record, "source", "succeeded", f"push {trigger['commit_id']}", now)
-            self._start_build(record)
+            out["build"] = self._start_build(record)
         except Exception:
             self.store.release_lock(run_id)
             raise
         # Indexed last so a failed start can be retried by EventBridge redelivery.
         self.store.put_index("event", trigger["event_id"], run_id)
-        return {"action": "run_started", "run_id": run_id}
+        return out
 
     def _queue(self, trigger: dict[str, Any]) -> dict[str, Any]:
         """Keep only the latest push that arrived during the active run."""
@@ -160,14 +189,134 @@ class Orchestrator:
             self.store.put_queued(entry)
             raise
 
-    def _start_build(self, record: dict[str, Any]) -> None:
+    # ---- build host (PRD 6.8) -----------------------------------------------------------
+
+    def _build_host(self) -> dict[str, Any] | None:
+        """The (non-terminated) instance tagged with the build host tag, or None."""
+        tag = self.cfg.build.host_tag
+        resp = self.ec2.describe_instances(
+            Filters=[
+                {"Name": f"tag:{tag['key']}", "Values": [tag["value"]]},
+                {
+                    "Name": "instance-state-name",
+                    "Values": ["pending", "running", "stopping", "stopped"],
+                },
+            ]
+        )
+        found = [i for r in resp["Reservations"] for i in r["Instances"]]
+        return sorted(found, key=lambda i: i["InstanceId"])[0] if found else None
+
+    def _ssm_online(self, instance_id: str) -> bool:
+        resp = self.ssm.describe_instance_information(
+            Filters=[{"Key": "InstanceIds", "Values": [instance_id]}]
+        )
+        return any(i.get("PingStatus") == "Online" for i in resp["InstanceInformationList"])
+
+    def _start_build(self, record: dict[str, Any]) -> dict[str, Any]:
+        """Begin the build stage: send the build now if the host is ready, else wake it."""
+        now = self.clock()
+        host = self._build_host()
+        if host is None:
+            rr.start_stage(record, "build", now)
+            rr.end_stage(record, "build", "failed", "no build host", now)
+            return self._finish(record, "failed")
+        instance_id = host["InstanceId"]
+        state = host["State"]["Name"]
+        wait = {
+            "instance_id": instance_id,
+            "host_state_at_start": state,
+            "ec2_running": state == "running",
+            "ssm_online": False,
+            "started_host": False,
+            "start_when_stopped": state == "stopping",
+        }
+        if state == "stopped":
+            self.ec2.start_instances(InstanceIds=[instance_id])
+            wait["started_host"] = True
+        rr.start_stage(record, "build", now, {**wait, "waiting_for_host": True})
+        self.store.put_index("host-wait", instance_id, record["run_id"])
+        return self._try_send_build(record)
+
+    def _try_send_build(self, record: dict[str, Any]) -> dict[str, Any]:
+        """Send the build command once both readiness signals are in; otherwise keep waiting."""
+        details = rr.get_stage(record, "build")["details"]
+        instance_id = details["instance_id"]
+        if details["ec2_running"] and self._ssm_online(instance_id):
+            details["ssm_online"] = True
+            details["host_ready_at"] = rr.iso(self.clock())
+            self.store.delete_index("host-wait", instance_id)
+            self._send_build(record, instance_id)
+            return {"action": "build_started", "run_id": record["run_id"]}
+        self.store.save(record)
+        return {"action": "waiting_for_host", "run_id": record["run_id"]}
+
+    def on_instance_state(self, event: dict[str, Any]) -> dict[str, Any]:
+        d = event.get("detail", {})
+        instance_id, state = d.get("instance-id"), d.get("state")
+        record = self._record_for("host-wait", instance_id)
+        if record is None:
+            return _ignored(f"instance {instance_id} {state}: no build waiting on it")
+        build = rr.get_stage(record, "build")
+        if build["status"] != "running" or not build["details"].get("waiting_for_host"):
+            return _ignored("build not waiting for its host", record["run_id"])
+        details = build["details"]
+        if state == "stopped" and details.get("start_when_stopped"):
+            self.ec2.start_instances(InstanceIds=[instance_id])
+            details["start_when_stopped"] = False
+            details["started_host"] = True
+            self.store.save(record)
+            return {"action": "host_starting", "run_id": record["run_id"]}
+        if state == "running":
+            details["ec2_running"] = True
+            details["ec2_running_at"] = rr.iso(self.clock())
+            return self._try_send_build(record)
+        return _ignored(f"instance state {state}", record["run_id"])
+
+    def _stop_build_host(self, record: dict[str, Any]) -> None:
+        details = rr.get_stage(record, "build")["details"]
+        instance_id = details.get("instance_id")
+        if not instance_id:
+            return
+        now = self.clock()
+        self.ec2.stop_instances(InstanceIds=[instance_id])
+        details["host_stopped_at"] = rr.iso(now)
+        self.store.put_host_usage(instance_id, now)
+
+    def sweep_build_host(self) -> dict[str, Any]:
+        """Re-check a build waiting for SSM online status; stop the host when idle > 30 min."""
+        for instance_id in self.store.list_index("host-wait"):
+            record = self._record_for("host-wait", instance_id)
+            if record is None or rr.get_stage(record, "build")["status"] != "running":
+                self.store.delete_index("host-wait", instance_id)
+                continue
+            return self._try_send_build(record)
+        host = self._build_host()
+        if host is None or host["State"]["Name"] != "running":
+            return {"action": "none"}
+        holder = self.store.lock_holder()
+        active = self.store.load(holder) if holder else None
+        if active and active["status"] == "running":
+            build = rr.get_stage(active, "build")
+            if build["status"] == "running":
+                return {"action": "none", "reason": "build in progress"}
+        usage = self.store.host_usage()
+        last = host["LaunchTime"]
+        if usage and usage["instance_id"] == host["InstanceId"]:
+            last = max(last, datetime.fromisoformat(usage["last_used_at"]))
+        idle = (self.clock() - last).total_seconds()
+        if idle <= self.cfg.build.host_idle_stop_seconds:
+            return {"action": "none", "idle_seconds": int(idle)}
+        self.ec2.stop_instances(InstanceIds=[host["InstanceId"]])
+        return {"action": "stopped_idle_host", "instance_id": host["InstanceId"]}
+
+    def _send_build(self, record: dict[str, Any], instance_id: str) -> None:
         now = self.clock()
         run_id = record["run_id"]
         fields = self._template_fields(record)
         commands = [c.format(**fields) for c in self.cfg.build.commands]
         log_prefix = self.store.run_key_prefix(run_id, "build-log/")
         resp = self.ssm.send_command(
-            InstanceIds=self.cfg.build.instance_ids,
+            InstanceIds=[instance_id],
             DocumentName=self.cfg.build.document,
             Comment=f"driftgate build {run_id}"[:100],
             Parameters={"commands": commands},
@@ -176,16 +325,18 @@ class Orchestrator:
         )
         command_id = resp["Command"]["CommandId"]
         self.store.put_index("ssm", command_id, run_id)
-        rr.start_stage(
-            record,
-            "build",
-            now,
+        details = rr.get_stage(record, "build")["details"]
+        details.update(
             {
+                "waiting_for_host": False,
                 "command_id": command_id,
-                "instance_ids": list(self.cfg.build.instance_ids),
+                "command_sent_at": rr.iso(now),
+                "instance_ids": [instance_id],
                 "log_uri": self.store.run_uri(run_id, "build-log/"),
-            },
+            }
         )
+        record["updated_at"] = rr.iso(now)
+        self.store.put_host_usage(instance_id, now)
         self.store.save(record)
 
     # ---- build -> next stage --------------------------------------------------------------
@@ -201,6 +352,7 @@ class Orchestrator:
         if rr.get_stage(record, "build")["status"] != "running":
             return _ignored("build already finished", record["run_id"])
         now = self.clock()
+        self._stop_build_host(record)
         if status in SSM_FAILURE:
             rr.end_stage(record, "build", "failed", status, now)
             return self._finish(record, "failed")

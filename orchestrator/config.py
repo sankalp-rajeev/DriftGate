@@ -18,7 +18,6 @@ DEFAULT_CONFIG_PATH = Path(__file__).with_name("config.json")
 ENV_OVERRIDES: dict[str, tuple[str | None, str]] = {
     "DRIFTGATE_RUN_BUCKET": (None, "run_bucket"),
     "DRIFTGATE_BRANCH": (None, "branch"),
-    "DRIFTGATE_BUILD_INSTANCE_IDS": ("build", "instance_ids"),
     "DRIFTGATE_CODEDEPLOY_APPLICATION": ("deploy", "application_name"),
     "DRIFTGATE_CODEDEPLOY_GROUP": ("deploy", "deployment_group_name"),
     "DRIFTGATE_BUNDLE_BUCKET": ("deploy", "bundle_bucket"),
@@ -29,7 +28,11 @@ ENV_OVERRIDES: dict[str, tuple[str | None, str]] = {
 
 @dataclass(frozen=True)
 class BuildConfig:
-    instance_ids: list[str]
+    # The build host is found by this tag (PRD 6.8: Role=build-host), started at the build
+    # stage if stopped, stopped when the build ends, and stopped by the sweep when idle longer
+    # than host_idle_stop_seconds (PRD 6.8: 30 minutes).
+    host_tag: dict[str, str]
+    host_idle_stop_seconds: int
     document: str
     working_directory: str
     commands: list[str]
@@ -59,6 +62,8 @@ class Config:
     branch: str
     run_bucket: str
     run_prefix: str
+    # PRD 6.8: runs/active.json expires 2 h after it is taken; an expired lock is stale.
+    lock_ttl_seconds: int
     build: BuildConfig
     deploy: DeployConfig
     approval: ApprovalConfig
@@ -73,9 +78,7 @@ def load_config(path: str | os.PathLike | None = None) -> Config:
         if not value:
             continue
         target = raw if section is None else raw.setdefault(section, {})
-        target[key] = (
-            [v.strip() for v in value.split(",") if v.strip()] if key.endswith("_ids") else value
-        )
+        target[key] = value
     deploy = dict(raw["deploy"])
     deploy["bundle_bucket"] = deploy.get("bundle_bucket") or raw["run_bucket"]
     return Config(
@@ -83,6 +86,7 @@ def load_config(path: str | os.PathLike | None = None) -> Config:
         branch=raw["branch"],
         run_bucket=raw["run_bucket"],
         run_prefix=raw["run_prefix"],
+        lock_ttl_seconds=int(raw["lock_ttl_seconds"]),
         build=BuildConfig(**raw["build"]),
         deploy=DeployConfig(**deploy),
         approval=ApprovalConfig(
