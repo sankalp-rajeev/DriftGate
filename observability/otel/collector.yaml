@@ -1,5 +1,6 @@
 # FR-24: local OpenTelemetry collector. Receives OTLP traces and metrics from the gate.
-# Traces go to the console (debug) and to runs/otel/traces.jsonl; metrics are exposed to Prometheus.
+# Traces go to Jaeger (trace viewer, PRD 6.8) and to runs/otel/traces.jsonl; metrics are
+# exposed to Prometheus on :8889.
 receivers:
   otlp:
     protocols:
@@ -13,20 +14,22 @@ processors:
 
 exporters:
   debug:
-    verbosity: detailed
+    verbosity: basic
+  otlp_grpc/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
   file:
     path: /out/traces.jsonl
   prometheus:
     endpoint: 0.0.0.0:8889
-    resource_to_telemetry_conversion:
-      enabled: true
 
 service:
   pipelines:
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [debug, file]
+      exporters: [otlp_grpc/jaeger, file, debug]
     metrics:
       receivers: [otlp]
       processors: [batch]
