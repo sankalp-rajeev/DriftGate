@@ -25,7 +25,7 @@ d5:
   repo: cais/mmlu
   commit: c30699e8356da336a370243923dbaf21066bb9fe
   file: data.tar
-  sample: 2000
+  sample: 14042          # the whole test split (PRD v1.3); order = random.Random(0).sample
   n_probs: 10
   lo: 0.25
   hi: 0.75
