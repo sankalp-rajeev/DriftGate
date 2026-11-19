@@ -124,13 +124,24 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("action", choices=["base", "run"])
     p.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     p.add_argument("--gate-config", type=Path, default=GATE_CONFIG)
-    p.add_argument("--instance-type", help=f"default: ${ref_store.INSTANCE_ENV} or local")
-    p.add_argument("--reference-key", help="default: gate config reference_store.key")
+    p.add_argument(
+        "--instance-type",
+        help=f"default: derived (IMDSv2 or local-host); ${ref_store.INSTANCE_ENV} wins",
+    )
+    p.add_argument(
+        "--reference-key", help="default: the baseline key (gate/baseline.yaml); test override"
+    )
     p.add_argument("--out", type=Path)
     args = p.parse_args(argv)
     gate_config = load_yaml(args.gate_config)
     serving, d2 = load_yaml(args.config), gate_config["d2"]
     path = base_logits_path(gate_config, serving, args.instance_type, args.reference_key)
+    if (
+        args.action == "base"
+        and not args.reference_key
+        and not ref_store.is_baseline(gate_config, serving)
+    ):
+        p.error("serving config is not the baseline in gate/baseline.yaml; base logits not written")
     result = base(serving, d2, path) if args.action == "base" else run(serving, d2, path)
     text = json.dumps(result, indent=2) + "\n"
     if args.out:

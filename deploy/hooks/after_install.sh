@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# AfterInstall: Python env, llama.cpp at the locked commit, model (FR-02 hash check), reference
-# measurement, instance serving config and the systemd unit.
+# AfterInstall: Python env, llama.cpp at the locked commit, model (FR-02 hash check), baseline
+# reference, instance serving config and the systemd unit.
 source "$(dirname "$0")/lib.sh"
 cd "$DRIFTGATE_APP_DIR"
 
@@ -32,12 +32,14 @@ PYEOF
 "$PY" -m gate.models --role "$role"
 log "model for role $role present and matches the manifest"
 
-# Reference measurement for the gate, from the storage bucket.
-reference="$("$PY" -c 'import sys, yaml; print(yaml.safe_load(open(sys.argv[1]))["reference"])' "$DRIFTGATE_GATE_CONFIG")"
+# Reference measurement and D2 reference logits for the gate, from the storage bucket. The key is
+# always the baseline's (gate/baseline.yaml) on this instance type (IMDSv2), never the candidate's.
 if [ -n "$DRIFTGATE_BUCKET" ]; then
-  mkdir -p "$(dirname "$reference")"
-  aws s3 cp --only-show-errors "s3://$DRIFTGATE_BUCKET/$DRIFTGATE_REFERENCE_KEY" "$reference"
-  log "reference measurement fetched to $reference"
+  eval "$("$PY" -m gate reference --print-key | "$PY" -c \
+    'import json, shlex, sys; d = json.load(sys.stdin); print("ref_key=%s ref_dir=%s" % (shlex.quote(d["key"]), shlex.quote(d["local_dir"])))')"
+  mkdir -p "$ref_dir"
+  aws s3 cp --only-show-errors --recursive "s3://$DRIFTGATE_BUCKET/$ref_key" "$ref_dir"
+  log "baseline reference fetched from $ref_key to $ref_dir"
 fi
 
 # Instance serving config: the revision's config with the instance listen address.

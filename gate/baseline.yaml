@@ -1,0 +1,7 @@
+# The approved reference release (PRD Section 6.8). Only a human changes this file.
+# Reference key at runtime: reference/<model_sha256>/<config_hash>/<instance-type>/
+# `python -m gate reference --print-key` shows the key; `python -m gate reference` refuses to write
+# it from a serving config whose hashes differ from these.
+schema_version: 1
+model_sha256: d7efb072e7724d25048a4fda0a3e10b04bdef5d06b1403a1c93bd9f1240a63c8
+config_hash: d0db861e0c31b4d0928cd73cceb36f81f2f32e63dec47dd78a656d1a405fc541

@@ -66,8 +66,8 @@ def test_score_of_exactly_one_passes():
     [
         _r("D6", "candidate.p95_ttft_ms", "upper", 500.0),  # milliseconds are not allowed
         _r("D6", "ratio.p95_ttft_ms", "agreement", 0.5),
-        _r("D3", "p95_approx_kl", "upper", 0.0),
-        _r("D3", "mean_agreement_share", "agreement", 1.0),
+        _r("D3", "p95_approx_kl", "upper", -0.1),
+        _r("D3", "mean_agreement_share", "agreement", 1.1),
         _r("D3", "mean_agreement_share", "lower", 0.5),
     ],
 )

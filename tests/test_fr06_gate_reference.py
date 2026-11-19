@@ -78,7 +78,10 @@ def test_model_change_changes_the_key_through_its_sha256():
 def test_instance_type_resolution():
     assert ref.instance_type("t3.large", env={}) == "t3.large"
     assert ref.instance_type(None, env={ref.INSTANCE_ENV: "t3.medium"}) == "t3.medium"
-    assert ref.instance_type(None, env={}) == "local"
+    assert ref.instance_type(None, env={}, imds=lambda: "t3.large") == "t3.large"
+    assert ref.instance_type(None, env={}, imds=lambda: None, hostname="my_laptop") == (
+        "local-my-laptop"
+    )
     with pytest.raises(ValueError):
         ref.instance_type("../etc", env={})
 
@@ -154,8 +157,31 @@ def test_missing_reference_is_an_input_error(tmp_path):
     assert cli.main(args + ["--instance-type", "nowhere"]) == 2
 
 
-def test_pinned_key_is_used_for_candidates(tmp_path):
-    g = _gate_config(tmp_path, key="reference/aaa/bbb/t3.large")
+def test_candidates_use_the_baseline_key(tmp_path):
+    g = _gate_config(tmp_path)
     cfg = load_yaml(g)
-    assert ref.resolve_key(cfg, SERVING) == "reference/aaa/bbb/t3.large/"
-    assert ref.resolve_key(cfg, SERVING, explicit_key="reference/x/y/z/") == "reference/x/y/z/"
+    base = ref.load_baseline(cfg["baseline"])
+    want = f"reference/{base['model_sha256']}/{base['config_hash']}/t3.large/"
+    assert ref.resolve_key(cfg, SERVING, "t3.large") == want
+    f1 = dict(SERVING, model="qwen2.5-1.5b-instruct-q4_k_m.gguf")
+    assert ref.resolve_key(cfg, f1, "t3.large") == want  # a candidate never picks its own key
+    assert ref.resolve_key(cfg, SERVING, explicit_key="reference/x/y/z") == "reference/x/y/z/"
+
+
+def test_baseline_file_matches_the_repo_reference_config():
+    cfg = copy.deepcopy(GATE)
+    assert ref.is_baseline(cfg, SERVING)
+
+
+def test_baseline_rejects_malformed_hashes(tmp_path):
+    bad = tmp_path / "baseline.yaml"
+    bad.write_text("model_sha256: abc\nconfig_hash: def\n")
+    with pytest.raises(ValueError):
+        ref.load_baseline(bad)
+
+
+def test_reference_is_only_written_from_the_baseline_config(tmp_path):
+    g = _gate_config(tmp_path)
+    serving = load_yaml(Path("serving/config.yaml"))
+    serving["sampler"]["temperature"] = 1.3
+    assert not ref.is_baseline(load_yaml(g), serving)
