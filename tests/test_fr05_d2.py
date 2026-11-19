@@ -59,7 +59,7 @@ def test_reference_logits_live_under_the_reference_key():
     gate_cfg = load_yaml(Path("gate/config.yaml"))
     serving = load_yaml(Path("serving/config.yaml"))
     path = d2.base_logits_path(gate_cfg, serving, "t3.large", None)
-    key = d2.ref_store.reference_key(serving, "t3.large")
+    key = d2.ref_store.resolve_key(gate_cfg, serving, "t3.large")
     assert path == Path(gate_cfg["reference_store"]["local_root"]) / key / "d2_base.kld"
     pinned = d2.base_logits_path(gate_cfg, serving, None, "reference/a/b/c")
     assert pinned == Path(gate_cfg["reference_store"]["local_root"]) / "reference/a/b/c/d2_base.kld"

@@ -225,8 +225,14 @@ def _parser() -> argparse.ArgumentParser:
         if name in ("measure", "run"):
             s.add_argument("--budget", type=int, required=True)
         if name in ("compare", "run", "reference"):
-            s.add_argument("--instance-type", help=f"default: ${ref_store.INSTANCE_ENV} or local")
-            s.add_argument("--reference-key", help="default: gate config reference_store.key")
+            s.add_argument(
+                "--instance-type",
+                help=f"default: derived (IMDSv2 or local-host); ${ref_store.INSTANCE_ENV} wins",
+            )
+            s.add_argument(
+                "--reference-key",
+                help="default: the baseline key (gate/baseline.yaml); test override",
+            )
         if name in ("compare", "run"):
             s.add_argument("--reference", type=Path, help="reference file; overrides the store")
         if name == "reference":
@@ -321,6 +327,11 @@ def _reference(args, gate_config: dict, tel) -> int:
         return EXIT_PASS
     if args.seed is None:
         raise ValueError("--seed is required to measure a reference")
+    if not args.reference_key and not ref_store.is_baseline(gate_config, serving):
+        raise ValueError(
+            "serving config is not the baseline in gate/baseline.yaml; "
+            "a reference is measured only on the baseline release"
+        )
     if args.upload and uri is None:
         raise ValueError("--upload needs reference_store.s3_uri or --s3-uri")
     budget = args.budget or gate_config["reference_store"]["budget"]

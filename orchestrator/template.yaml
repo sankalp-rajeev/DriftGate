@@ -33,8 +33,9 @@ Parameters:
     Type: String
     Default: ""
     Description: >-
-      Reference key (reference/<model-sha256>/<config-hash>/<instance-type>/) checked before
-      each build; empty disables the automatic `gate reference` run (owner decision pending)
+      Baseline reference key (reference/<baseline model sha>/<baseline config hash>/<build host
+      instance type>/, from `gate reference --print-key`; see gate/baseline.yaml) checked before
+      each build; empty disables the automatic `gate reference` run
   ReferenceRevision:
     Type: String
     Default: ""
