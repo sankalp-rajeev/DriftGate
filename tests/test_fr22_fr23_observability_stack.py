@@ -72,14 +72,28 @@ def test_grafana_provisions_prometheus_and_dashboard():
     assert any(v.endswith(":" + mount + ":ro") for v in volumes)
 
 
-@pytest.mark.parametrize("title", ["Generation tokens/s", "Prompt tokens/s", "Queue"])
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Generation tokens/s",
+        "Prompt tokens/s",
+        "Queue",
+        "TTFT and inter-token latency p95 (gate D6)",
+        "Gate score per run",
+    ],
+)
 def test_dashboard_has_fr23_panels(title):
     assert title in {p["title"] for p in DASHBOARD["panels"]}
 
 
 def test_dashboard_queries_known_metrics():
+    from gate.telemetry import VERDICT_GAUGES
+
+    gate_metrics = {n.replace(".", "_") for n in VERDICT_GAUGES} | {"driftgate_gate_exit_code"}
     for panel in DASHBOARD["panels"]:
         for target in panel["targets"]:
             names = set(re.findall(r"llamacpp:[a-z_]+", target["expr"]))
             assert names <= LLAMA_METRICS, (panel["title"], names - LLAMA_METRICS)
+            gate = set(re.findall(r"driftgate_[a-z0-9_]+", target["expr"]))
+            assert gate <= gate_metrics, (panel["title"], gate - gate_metrics)
             assert target["datasource"]["uid"] == "prometheus"

@@ -1,5 +1,6 @@
 # Gate telemetry (FR-24). Read by gate/telemetry.py; OTEL_EXPORTER_OTLP_ENDPOINT overrides endpoint.
-enabled: true
+# Off by default (tests, CI, Lab build host have no collector); DRIFTGATE_TELEMETRY=1 turns it on.
+enabled: false
 service_name: driftgate-gate
 endpoint: http://localhost:4318     # OTLP/HTTP on the local collector (observability/docker-compose.yml)
 provider: llama.cpp                 # gen_ai.provider.name

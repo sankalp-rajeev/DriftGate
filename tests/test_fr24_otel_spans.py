@@ -81,3 +81,68 @@ def test_endpoint_from_config_and_env(monkeypatch):
     assert telemetry.load_config()["endpoint"] == cfg["endpoint"]
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4318")
     assert telemetry.load_config()["endpoint"] == "http://collector:4318"
+
+
+# ---------- one trace across processes, CLI spans, verdict metrics ----------
+
+from opentelemetry.sdk.metrics.export import InMemoryMetricReader  # noqa: E402
+
+from gate import cli  # noqa: E402
+
+
+def _tel(exporter, env=None, **kw):
+    return telemetry.GateTelemetry(telemetry.load_config(env={}), exporter=exporter, env=env, **kw)
+
+
+def test_disabled_by_default_and_env_enables():
+    assert telemetry.load_config(env={})["enabled"] is False
+    assert telemetry.load_config(env={"DRIFTGATE_TELEMETRY": "1"})["enabled"] is True
+
+
+def test_traceparent_joins_child_process_spans_to_one_trace():
+    parent_exp, child_exp = InMemorySpanExporter(), InMemorySpanExporter()
+    parent = _tel(parent_exp)
+    with parent.run("run-x", "m") as root:
+        env = parent.child_env(root)
+        child = _tel(child_exp, env=env)  # stands in for a separate process
+        with child.detector("D1"):
+            pass
+        child.shutdown()
+    parent.shutdown()
+    spans = {s.name: s for s in parent_exp.get_finished_spans() + child_exp.get_finished_spans()}
+    assert spans["gate.D1"].context.trace_id == spans["gate.run"].context.trace_id
+    assert spans["gate.D1"].parent.span_id == spans["gate.run"].context.span_id
+
+
+def test_span_wrapper_runs_command_and_keeps_exit_code():
+    exporter = InMemorySpanExporter()
+    assert telemetry.main(["span", "D2", "--", "false"], tel=_tel(exporter)) == 1
+    (span,) = exporter.get_finished_spans()
+    assert span.name == "gate.D2"
+    assert span.attributes["process.exit.code"] == 1
+    assert not span.status.is_ok
+
+
+def test_gate_cli_emits_d6_span_and_verdict_gauges(tmp_path, monkeypatch):
+    from test_fr06_gate_cli import _files
+
+    monkeypatch.delenv(cli.FORCE_FAIL_ENV, raising=False)
+    monkeypatch.setenv(cli.RUN_ID_ENV, "run-cli")
+    exporter, reader = InMemorySpanExporter(), InMemoryMetricReader()
+    tel = _tel(exporter, metric_reader=reader)
+    files = _files(tmp_path)
+    data_before_shutdown = []
+    real_shutdown = tel.shutdown
+    tel.shutdown = lambda: (data_before_shutdown.append(reader.get_metrics_data()), real_shutdown())
+    assert cli.main(files, tel=tel) == 0
+    names = [s.name for s in exporter.get_finished_spans()]
+    assert names == ["gate.D6", "gate.cli.compare"]
+    (data,) = data_before_shutdown
+    points = {
+        m.name: m.data.data_points[0]
+        for rm in data.resource_metrics
+        for sm in rm.scope_metrics
+        for m in sm.metrics
+    }
+    assert "driftgate.d3.mean_agreement_share" in points
+    assert points["driftgate.gate.exit_code"].attributes["run_id"] == "run-cli"
