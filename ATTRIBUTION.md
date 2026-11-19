@@ -14,3 +14,8 @@ Third-party code, tools, models and datasets used by DriftGate. Licenses come fr
 | databricks-dolly-15k | D3 prompt set | CC BY-SA 3.0 | https://huggingface.co/datasets/databricks/databricks-dolly-15k |
 | MMLU (`cais/mmlu`) | D5 panel and hidden pool | MIT | https://huggingface.co/datasets/cais/mmlu |
 | cfn-lint | CloudFormation template validation (dev tool) | MIT-0 | https://github.com/aws-cloudformation/cfn-lint |
+| Prometheus (`prom/prometheus:v3.16.0`) | Local scrape of llama-server `/metrics` (FR-22) | Apache-2.0 | https://github.com/prometheus/prometheus |
+| Grafana (`grafana/grafana:13.2.6`) | Local dashboard (FR-23) | AGPL-3.0 (unmodified image, run locally) | https://github.com/grafana/grafana |
+| OpenTelemetry Collector Contrib (`otel/opentelemetry-collector-contrib:0.164.0`) | Local trace and metric collector (FR-24) | Apache-2.0 | https://github.com/open-telemetry/opentelemetry-collector-contrib |
+| Jaeger (`jaegertracing/jaeger:2.22.0`, all-in-one) | Local trace viewer (FR-24, PRD 6.8) | Apache-2.0 | https://github.com/jaegertracing/jaeger |
+| OpenTelemetry Python SDK, OTLP/HTTP exporter, semantic conventions (1.45.2, semconv 0.66b2 = schema 1.44.0) | Gate spans (FR-24) | Apache-2.0 | https://github.com/open-telemetry/opentelemetry-python |

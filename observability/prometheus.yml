@@ -1,0 +1,17 @@
+# FR-22: scrape llama-server /metrics (started with --metrics) during fault runs and A/A calibration.
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: llama-server
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.docker.internal:8082"]
+        labels:
+          service: llama-server
+
+  # Gate metrics (gate score, D6 latency) exported by the OTel collector.
+  - job_name: driftgate-gate
+    static_configs:
+      - targets: ["otel-collector:8889"]

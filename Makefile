@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup test lint fmt models verify serve up down storage-up storage-down orchestrator-zip
+.PHONY: help setup test lint fmt models verify serve up down storage-up storage-down obs-up obs-down orchestrator-zip
 
 # Keep the project venv isolated from any PYTHONPATH set by the shell (e.g. a sourced ROS setup).
 unexport PYTHONPATH
@@ -51,3 +51,11 @@ storage-up: ## Create or update the persistent driftgate-storage stack (calls AW
 
 storage-down: ## Delete the storage stack; empty every object version first (calls AWS; teardown only)
 	aws cloudformation delete-stack --region $(AWS_REGION) --stack-name $(STORAGE_STACK_NAME) && aws cloudformation wait stack-delete-complete --region $(AWS_REGION) --stack-name $(STORAGE_STACK_NAME)
+
+OBS_COMPOSE := docker compose -f observability/docker-compose.yml
+
+obs-up: ## Start Prometheus, Grafana, OTel collector and Jaeger locally (FR-22 to FR-24)
+	mkdir -p runs/otel && $(OBS_COMPOSE) up -d
+
+obs-down: ## Stop the local observability stack
+	$(OBS_COMPOSE) down
