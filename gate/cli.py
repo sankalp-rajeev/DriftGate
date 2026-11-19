@@ -4,14 +4,20 @@
   python -m gate compare --candidate runs/x/candidate.json --out runs/x/verdict.json
   python -m gate run --budget 16 --seed 0 --out runs/x/verdict.json
 
-`measure` records raw per-item outputs; `compare` turns the reference measurement and a candidate
-measurement into a verdict; `run` does both. Data paths, the reference measurement, the gate mode
-and the thresholds file come from `gate/config.yaml`; the server address from the serving config.
+  python -m gate reference --seed 0 [--upload]     # reference measurement, PRD Section 6.8
+  python -m gate reference --print-key             # just the reference key
 
-Gate mode (PRD Section 6.8): `report` records the verdict and exits 0; `enforce` exits 1 when any
-rule in the thresholds file fails; `auto` is `enforce` once the thresholds file exists (produced
-by A/A calibration, FR-12) and `report` until then. `DRIFTGATE_FORCE_FAIL=1` makes `run` and
-`compare` exit 1 in any mode (rollback drills). Exit 2 is a usage or input error.
+`measure` records raw per-item outputs; `compare` turns the reference measurement and a candidate
+measurement into a verdict; `run` does both; `reference` measures the reference revision and
+stores it under `reference/<model-sha256>/<config-hash>/<instance-type>/` (gate/reference.py).
+Data paths, the reference store, the gate mode and the thresholds file come from
+`gate/config.yaml`; the server address from the serving config.
+
+Gate mode (PRD Section 6.8): `report` records the verdict and exits 0; `enforce` scores every
+detector against the thresholds file (gate/score.py) and exits 1 when the gate score is above 1;
+`auto` is `enforce` once the thresholds file exists (produced by A/A calibration, FR-12) and
+`report` until then. `DRIFTGATE_FORCE_FAIL=1` makes `run` and `compare` exit 1 in any mode
+(rollback drills). Exit 2 is a usage or input error, including a missing reference.
 """
 
 from __future__ import annotations
@@ -19,7 +25,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import operator
 import os
 import sys
 import time
@@ -27,18 +32,20 @@ from contextlib import nullcontext
 from pathlib import Path
 
 from gate import d3, d5, d6, telemetry
+from gate import reference as ref_store
 from gate.llama_client import LlamaServer
 from gate.manifest import load_yaml
+from gate.score import THRESHOLDS_SCHEMA, score
 
 MEASUREMENT_SCHEMA = "driftgate.measurement/1"
-VERDICT_SCHEMA = "driftgate.verdict/1"
-THRESHOLDS_SCHEMA = "driftgate.thresholds/1"
+VERDICT_SCHEMA = "driftgate.verdict/2"
+REFERENCE_SCHEMA = "driftgate.reference/1"
 DEFAULT_GATE_CONFIG = Path("gate/config.yaml")
 DEFAULT_SERVING_CONFIG = Path("serving/config.yaml")
 FORCE_FAIL_ENV = "DRIFTGATE_FORCE_FAIL"
 EXIT_PASS, EXIT_FAIL, EXIT_ERROR = 0, 1, 2
 RUN_ID_ENV = "DRIFTGATE_RUN_ID"
-OPS = {">=": operator.ge, "<=": operator.le, ">": operator.gt, "<": operator.lt}
+__all__ = ["THRESHOLDS_SCHEMA", "main"]
 
 
 def _sha256(path: Path) -> str:
@@ -153,40 +160,24 @@ def resolve_mode(mode: str, thresholds_path: Path) -> str:
     return mode
 
 
-def _lookup(obj: dict, dotted: str):
-    for key in dotted.split("."):
-        obj = obj[key]
-    return obj
-
-
-def evaluate(dets: dict, thresholds: dict) -> list[dict]:
-    """Apply every rule in a thresholds file; each result says whether that rule held."""
-    if thresholds.get("schema") != THRESHOLDS_SCHEMA:
-        raise ValueError(f"unsupported thresholds schema {thresholds.get('schema')!r}")
-    out = []
-    for rule in thresholds["rules"]:
-        value = _lookup(dets[rule["detector"]], rule["metric"])
-        out.append(rule | {"observed": value, "ok": OPS[rule["op"]](value, rule["value"])})
-    return out
-
-
 def decide(dets: dict, mode: str, thresholds_path: Path, env=None) -> dict:
     env = os.environ if env is None else env
     effective = resolve_mode(mode, thresholds_path)
     forced = env.get(FORCE_FAIL_ENV) == "1"
-    rules = None
+    scored = {"rules": None, "scores": None, "gate_score": None, "passed": None}
     if effective == "enforce":
         if not thresholds_path.exists():
             raise ValueError(f"enforce mode needs {thresholds_path}")
-        rules = evaluate(dets, json.loads(thresholds_path.read_text()))
-    passed = None if rules is None else all(r["ok"] for r in rules)
-    fail = forced or passed is False
+        scored = score(dets, json.loads(thresholds_path.read_text()))
+    fail = forced or scored["passed"] is False
     return {
         "mode": effective,
         "configured_mode": mode,
         "thresholds_file": str(thresholds_path) if thresholds_path.exists() else None,
-        "rules": rules,
-        "passed": passed,
+        "rules": scored["rules"],
+        "scores": scored["scores"],
+        "gate_score": scored["gate_score"],
+        "passed": scored["passed"],
         "forced_fail": forced,
         "exit_code": EXIT_FAIL if fail else EXIT_PASS,
     }
@@ -223,17 +214,26 @@ def _write(obj: dict, out: Path | None) -> None:
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="gate", description=__doc__.splitlines()[0])
     sub = p.add_subparsers(dest="cmd", required=True)
-    for name in ("measure", "compare", "run"):
+    for name in ("measure", "compare", "run", "reference"):
         s = sub.add_parser(name)
         s.add_argument("--gate-config", type=Path, default=DEFAULT_GATE_CONFIG)
         s.add_argument("--out", type=Path, help="write JSON here (default: stdout)")
-        if name in ("measure", "run"):
-            s.add_argument("--config", type=Path, default=DEFAULT_SERVING_CONFIG)
+        s.add_argument("--config", type=Path, default=DEFAULT_SERVING_CONFIG)
+        if name in ("measure", "run", "reference"):
             s.add_argument("--server", help="base URL (default: host and port from --config)")
+            s.add_argument("--seed", type=int, required=name != "reference")
+        if name in ("measure", "run"):
             s.add_argument("--budget", type=int, required=True)
-            s.add_argument("--seed", type=int, required=True)
+        if name in ("compare", "run", "reference"):
+            s.add_argument("--instance-type", help=f"default: ${ref_store.INSTANCE_ENV} or local")
+            s.add_argument("--reference-key", help="default: gate config reference_store.key")
         if name in ("compare", "run"):
-            s.add_argument("--reference", type=Path, help="default: gate config `reference`")
+            s.add_argument("--reference", type=Path, help="reference file; overrides the store")
+        if name == "reference":
+            s.add_argument("--budget", type=int, help="default: gate config reference_store")
+            s.add_argument("--print-key", action="store_true", help="print the key and exit")
+            s.add_argument("--upload", action="store_true", help="also copy to S3 (off by default)")
+            s.add_argument("--s3-uri", help="default: gate config reference_store.s3_uri")
         if name == "compare":
             s.add_argument("--candidate", type=Path, required=True)
         if name == "run":
@@ -258,6 +258,8 @@ def main(argv: list[str] | None = None, tel=None) -> int:
 def _main(args, tel, span, run_id: str) -> int:
     try:
         gate_config = load_yaml(args.gate_config)
+        if args.cmd == "reference":
+            return _reference(args, gate_config, tel)
         if args.cmd in ("measure", "run"):
             url = args.server or server_url(load_yaml(args.config))
             m = measure(
@@ -279,7 +281,7 @@ def _main(args, tel, span, run_id: str) -> int:
             candidate = m
         else:
             candidate = json.loads(args.candidate.read_text())
-        ref_path = args.reference or Path(gate_config["reference"])
+        ref_path = reference_path(args, gate_config)
         v = verdict(json.loads(ref_path.read_text()), candidate, gate_config, tel=tel)
     except (OSError, ValueError, KeyError) as e:
         sys.stderr.write(f"gate: {type(e).__name__}: {e}\n")
@@ -289,3 +291,61 @@ def _main(args, tel, span, run_id: str) -> int:
     span.set_attribute("process.exit.code", v["decision"]["exit_code"])
     _write(v, args.out)
     return v["decision"]["exit_code"]
+
+
+# ---------- reference ----------
+
+
+def reference_path(args, gate_config: dict) -> Path:
+    """--reference, else gate config `reference` (a file), else the keyed reference store."""
+    if args.reference:
+        return args.reference
+    if gate_config.get("reference"):
+        return Path(gate_config["reference"])
+    key = ref_store.resolve_key(
+        gate_config, load_yaml(args.config), args.instance_type, args.reference_key
+    )
+    path = ref_store.local_dir(gate_config, key) / ref_store.MEASUREMENT_FILE
+    if not path.exists():
+        raise ValueError(f"no reference measurement at {path}; run `python -m gate reference`")
+    return path
+
+
+def _reference(args, gate_config: dict, tel) -> int:
+    serving = load_yaml(args.config)
+    key = ref_store.resolve_key(gate_config, serving, args.instance_type, args.reference_key)
+    local = ref_store.local_dir(gate_config, key)
+    uri = ref_store.s3_uri(gate_config, key, args.s3_uri)
+    if args.print_key:
+        _write({"key": key, "local_dir": str(local), "s3_uri": uri}, args.out)
+        return EXIT_PASS
+    if args.seed is None:
+        raise ValueError("--seed is required to measure a reference")
+    if args.upload and uri is None:
+        raise ValueError("--upload needs reference_store.s3_uri or --s3-uri")
+    budget = args.budget or gate_config["reference_store"]["budget"]
+    url = args.server or server_url(serving)
+    m = measure(
+        LlamaServer(url),
+        budget,
+        args.seed,
+        Path(gate_config["data"]["d3_prompts"]),
+        Path(gate_config["data"]["d5_panel"]),
+        args.config,
+        tel,
+    )
+    m["reference"] = {
+        "schema": REFERENCE_SCHEMA,
+        "key": key,
+        "model_sha256": key.split("/")[1],
+        "config_hash": key.split("/")[2],
+        "instance_type": key.split("/")[3],
+    }
+    path = local / ref_store.MEASUREMENT_FILE
+    _write(m, path)
+    uploaded = None
+    if args.upload:
+        uploaded = uri + ref_store.MEASUREMENT_FILE
+        ref_store.upload(path, uploaded)
+    _write({"key": key, "path": str(path), "uploaded": uploaded}, args.out)
+    return EXIT_PASS
