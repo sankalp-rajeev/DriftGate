@@ -1,0 +1,31 @@
+# Fault definitions (PRD Section 6.3). Each is a diff to the reference serving bundle:
+#   set:       config values to change (dotted keys into serving/config.yaml)
+#   template:  exact text edits to the served chat template (each `find` must occur once)
+# `python -m faults.inject <id>` (or `make fault F=<id>`) builds the bundle and logs the diff.
+faults:
+  AA:
+    layer: none
+    description: Identical redeploy
+  F1:
+    layer: artifact
+    description: Weights Q8_0 to Q4_K_M
+    set:
+      model: qwen2.5-1.5b-instruct-q4_k_m.gguf
+  F2:
+    layer: artifact
+    description: Weights Q8_0 to Q2_K
+    set:
+      model: qwen2.5-1.5b-instruct-q2_k.gguf
+  F3:
+    layer: serving
+    description: KV cache quantized at launch (PRD Section 6.2.1 flags)
+    set:
+      cache.type_k: q4_0
+      cache.type_v: q4_0
+      cache.flash_attn: "on"
+  F4:
+    layer: serving
+    description: Chat template edit, system turn (default system prompt shortened)
+    template:
+      - find: "system\\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>"
+        replace: "system\\nYou are a helpful assistant.<|im_end|>"

@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup test lint fmt models verify serve gate up down storage-up storage-down obs-up obs-down orchestrator-zip
+.PHONY: help setup test lint fmt models verify serve gate fault up down storage-up storage-down obs-up obs-down orchestrator-zip
 
 # Keep the project venv isolated from any PYTHONPATH set by the shell (e.g. a sourced ROS setup).
 unexport PYTHONPATH
@@ -36,6 +36,9 @@ verify: ## Check the served model against the SHA-256 manifest (FR-02)
 
 gate: ## Run the gate against the served model (BUDGET=n SEED=n required; OUT=verdict path)
 	uv run python -m gate run --budget $(BUDGET) --seed $(SEED) $(if $(OUT),--out $(OUT))
+
+fault: ## Build a fault bundle and log its diff (F=AA|F1|F2|F3|F4, OUT=dir, default artifacts/bundles)
+	uv run python -m faults.inject $(F) --out $(or $(OUT),artifacts/bundles)
 
 serve: ## Run llama-server from serving/config.yaml (CONFIG=... to override)
 	uv run python -m gate.serve --config $(or $(CONFIG),serving/config.yaml)
