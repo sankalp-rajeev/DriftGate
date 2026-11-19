@@ -57,7 +57,7 @@ def _wait_health(base, timeout=120):
 
 @pytest.fixture
 def ci_config(tmp_path):
-    cfg = dict(CONFIG, model=CI_MODEL)
+    cfg = dict(CONFIG, model=CI_MODEL, threads=4)
     cfg["server"] = dict(CONFIG["server"], port=_free_port())
     cfg["context"] = {"ctx_size": 2048}
     path = tmp_path / "config.yaml"
