@@ -3,7 +3,7 @@
 **Status: DRAFT for owner review (T-08). Not frozen until the owner merges this PR.** After the
 merge commit, nothing under `docs/prereg/` may be edited (AGENTS.md hard rule 1). All rules below
 are the owner's decisions of 19 November 2026 (PRD §6.8). This document sets no threshold value,
-alpha or prompt budget: thresholds come only from the calibration script output.
+alpha or budget level: thresholds come only from the calibration script output.
 
 ## 1. What is frozen
 
@@ -11,11 +11,12 @@ alpha or prompt budget: thresholds come only from the calibration script output.
 | --- | --- |
 | Reference model | `qwen2.5-1.5b-instruct-q8_0.gguf` (PRD §6.2.1); SHA-256 in `serving/manifest.json` |
 | llama.cpp build | commit `8c16babba5d4c66e28a19d86e572e4b04f522d52` (`serving/llama_cpp.lock`) |
-| Reference serving config | `serving/config.yaml` at the commit that precedes the first fault run; ctx_size 4096, parallel 1, seed 0 |
+| Reference serving config | `serving/config.yaml` at the commit that precedes the first fault run (ctx_size 4096, parallel 1, seed 0), identified by the baseline in `gate/baseline.yaml`: model SHA-256 `d7efb072e7724d25048a4fda0a3e10b04bdef5d06b1403a1c93bd9f1240a63c8`, config hash `d0db861e0c31b4d0928cd73cceb36f81f2f32e63dec47dd78a656d1a405fc541` |
 | Detector data | SHA-256 of each file in `gate/data/manifest.json` (below) |
 | Detector definitions | PRD §6.2.1: D1, D2 (`--threads 2` always), D3, D5, D6 |
 | Baseline | `gate/baseline.yaml` (model SHA-256 and config hash of the reference release); candidates are compared against its reference at `reference/<model sha>/<config hash>/<instance-type>/` |
-| Seeds | Every randomized step takes an explicit `--seed`; selection, bootstrap and A/A runs use seed 0 unless a run states another |
+| Fault definitions | `faults/faults.yaml`, SHA-256 `e2d4e308eccac976a431adfa1c75622794e2d62c7af63591cf8c8439c03635a8` |
+| Seeds | The gate measurement seed is 0 (the reference's seed; decoding is greedy). Each repeated run has a run seed (1 to R) that drives hidden-pool sampling. Selection and bootstrap use seed 0 |
 
 Data hashes (SHA-256):
 
@@ -43,72 +44,99 @@ gold-letter probability in [0.25, 0.75]; panel 256, hidden pool 512.
 | F8 | llama.cpp build bump | Engine |
 | F9 | Thread count changed (RQ3 control) | Engine |
 
-Exact diffs are produced by `make fault F=<id>` from `faults/faults.yaml`:
+Exact diffs are produced by `make fault F=<id>` from `faults/faults.yaml` (SHA-256 above):
 
+- F5: in the template's tools branch only, the sentence that tells the model to return function
+  calls inside `<tool_call></tool_call>` tags is deleted. Every other branch is byte-identical.
+  **Pre-registered expectation: D1 catches F5; D3 and D5 miss it on both the public panel and the
+  hidden pool, because neither uses tools.**
 - F6: default sampler temperature raised by 0.5 (0.8 to 1.3). The gate sends explicit greedy
   requests, so a **null result is pre-registered**: the gate pins sampling, and catching drift in
   sampler defaults needed D4, which is cut.
 - F7: `ctx_size` 4096 to 256.
 - F8: the latest llama.cpp release tag on the day T-15 starts; the exact tag is recorded in the
-  run log.
-- F9: serving threads 2 to 1.
-- F5: the tool-call branch of the template, as defined in `faults/faults.yaml` before any F5 run.
+  run log and built as a separate llama.cpp checkout.
+- F9: serving threads -1 (auto) to 1.
 - Analysis-only quantization sweep for RQ2: Q8_0, Q6_K, Q5_K_M, Q4_K_M, Q3_K_M and Q2_K from the
-  same Qwen repo, plus F3.
+  same Qwen repo, plus F3. It runs D2 and D5 only, once per model.
 
-## 3. Detectors and statistics
+## 3. Detectors and gating statistics
 
-- D1 template lint (ggufdoctor and rendered-template diff): any failure is a fail.
-- D2: mean KLD, p99 KLD, same-top-token %, `llama-perplexity -c 512 --threads 2`.
-- D3: agreement share (mean) and per-prompt KL (mean and p95), as defined in PRD §6.2.1.
-- D5: paired per-item accuracy delta, 95% paired bootstrap interval (10,000 resamples, seed 0,
-  percentile), exact McNemar p-value reported alongside.
-- D6: p95 TTFT and p95 inter-token latency, thresholds expressed as a **ratio to the reference
-  p95** measured by `gate reference` on the same instance type.
-- D4: cut (FR-07 is marked cut in the PRD, first item on the cut list). No alpha is used.
+One gating statistic per detector. Every other statistic is reported, never gated.
+
+| Detector | Gating statistic | Reported only |
+| --- | --- | --- |
+| D1 | pass/fail (ggufdoctor and rendered-template diff) | |
+| D2 | mean KLD (`llama-perplexity -c 512 --threads 2`) | p99 KLD, same-top-token % |
+| D3 | 1 minus mean agreement share | mean and p95 approximate KL |
+| D5 | accuracy drop (reference minus candidate) | paired delta, 95% bootstrap interval (10,000 resamples, seed 0, percentile), exact McNemar p |
+| D6 | p95 inter-token latency, as a ratio to the reference p95 | p95 TTFT ratio |
+
+D4 is cut (FR-07 is marked cut in the PRD). No alpha is used.
+
+D2 runs only for A/A, F1, F2, F3, F8 and the quantization sweep. D1 runs for every fault.
 
 ## 4. Thresholds rule
 
 Thresholds come only from the calibration script output (AGENTS.md hard rule 2); no value is
 written here or edited by hand.
 
-- Calibration: 20 A/A runs per detector. Each is a full identical redeploy with llama-server
-  restarted. One run at budget 256 covers 16 and 64, because budgets are prefixes of the same
-  files.
-- Threshold = the maximum A/A statistic at that budget, with no margin (for agreement-type
-  metrics, the oriented statistic 1 minus agreement). Fail means strictly above the threshold.
-  By exchangeability this bounds the false-alarm rate at 1/21, about 4.8%.
-- Ten more held-out A/A runs estimate the actual rate, with a Clopper-Pearson 95% interval.
-- If every A/A statistic is zero, the threshold is zero, and that is reported as the RQ3 result.
-  A negative maximum for an upper-type statistic is recorded as zero.
-- Output: threshold files per budget (schema `driftgate.thresholds/2`) and `calibration.json`,
-  written by `analysis/calibrate.py`; D6 thresholds are ratios to the reference p95.
+- Calibration: 20 A/A runs. Each is a full identical redeploy with llama-server restarted. One run
+  at L3 covers L1 and L2 (section 5). D2 is part of every A/A run.
+- Threshold, per detector and level = the maximum A/A value of its gating statistic, with no
+  margin. Fail means strictly above the threshold. By exchangeability this bounds the false-alarm
+  rate per detector at 1/21, about 4.8%.
+- Ten more held-out A/A runs count false alarms per detector. The gate-level rate (any detector
+  firing) is estimated on the same ten runs and reported with a Clopper-Pearson 95% interval; no
+  bound is claimed for it.
+- If every A/A value is zero, the threshold is zero, and that is reported as the RQ3 result. A
+  negative maximum for an upper-type statistic is recorded as zero. A zero threshold gives a
+  finite gate score (1e6) beyond it.
+- Output: threshold files per level (schema `driftgate.thresholds/2`) and `calibration.json`,
+  written by `analysis/calibrate.py`. D6 thresholds are ratios to the reference p95.
 - Until `gate/thresholds.json` exists the gate runs in report mode.
 
-## 5. Prompt budget rule
+## 5. Budget levels
 
-Budgets are the first N records of `d3_prompts.jsonl` and of `d5_panel.jsonl`, with N in {16, 64,
-256}. The ValidateService budget is the smallest N at which the calibrated detectors hold FPR of
-5% or less (held-out point estimate, per detector) **and** the gate fits NFR-01 (10 minutes or
-less on t3.large). 16 is provisional in
-report mode (PRD §6.8). Power is measured for every fault at all three budgets (FR-13).
+| Level | D3 prompts | D5 items |
+| --- | --- | --- |
+| L1 | 16 | 64 |
+| L2 | 32 | 128 |
+| L3 | 64 | 256 |
 
-## 6. Analysis plan
+Levels are prefixes of the frozen `d3_prompts.jsonl` and `d5_panel.jsonl`, and one run at L3
+covers all levels. A level is eligible unless a detector has 2 or more false alarms in the 10
+held-out A/A runs. The ValidateService level is the smallest eligible level (16 prompts and 16
+items stay provisional in report mode). NFR-01 (10 minutes or less on t3.large) is checked with one
+timed gate run at that level on a t3.large in the Lab, not with laptop timings. Power is measured
+for every fault at all three levels (FR-13).
 
-Scripts (written and merged before this pre-registration, no runs; commit `0938dff4824cbd62c1143749b695187d677b456f`):
+## 6. Repetitions and analysis plan
 
-- `analysis/calibrate.py`: calibration, thresholds, held-out false-alarm rate with interval,
-  budget selection.
-- `analysis/matrix.py`: detection rate, interval and wall-clock per fault, detector and budget
+- Repetitions per fault: if all 20 calibration A/A runs give bitwise-identical D3 and D5 outputs,
+  each fault runs 2 times (run seeds 1 and 2); otherwise 5 times (run seeds 1 to 5). Each run is a
+  fresh redeploy. Hidden-pool items are sampled per run with that run's seed.
+- Detection rate = detections out of runs completed, with a Clopper-Pearson 95% interval. If
+  compute runs out, the runs completed are reported and F8 and F9 are cut first (PRD §17).
+- The quantization sweep is one run per model.
+
+Scripts (written and merged before this pre-registration, no runs; commit
+`b5619eb56f16d1f998606f409b83fa028c057240`):
+
+- `analysis/calibrate.py`: calibration, thresholds, held-out false-alarm rates with intervals,
+  level selection.
+- `analysis/matrix.py`: detection rate, interval and wall-clock per fault, detector and level
   (FR-13), as CSV.
 - `analysis/rq2.py`: Spearman correlation with an exact permutation p-value.
+- `analysis/study.py` (`make study`): the overnight runner. It refuses to start unless this
+  pre-registration is merged into main and `faults/faults.yaml` matches the hash above.
 
 Every result row records commit, config hash and seed (NFR-07).
 
 - RQ1: detectors versus fault classes at FPR 5% or less, from the matrix.
 - RQ2: Spearman rank correlation between D2 mean KL and the D5 accuracy drop, with an exact
   permutation p-value, over the quantization sweep plus F3.
-- RQ3: share of bitwise-identical greedy logprobs (A/A and F9).
+- RQ3: share of bitwise-identical greedy outputs (A/A and F9).
 - F5 evasion (FR-14): public panel versus hidden pool, detection rate for both.
 
 ## 7. Deviations
