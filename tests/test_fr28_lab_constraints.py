@@ -1,12 +1,16 @@
-"""FR-28: one-page "Lab Constraints and Equivalences" appendix, one table."""
+"""FR-28 / PRD 6.8: one-page "Lab Constraints and Equivalences" appendix, one table with
+evidence IDs; the evidence itself lives in docs/lab-constraints-evidence.md."""
 
 import json
+import re
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 DOC = ROOT / "docs" / "lab-constraints.md"
+EVIDENCE = ROOT / "docs" / "lab-constraints-evidence.md"
+WORD_LIMIT = 500  # PRD 6.8 target; the one-page landscape Letter render is a human check
 
 COLUMNS = [
     "Constraint",
@@ -25,26 +29,30 @@ REQUIRED_ROWS = [
     "Cost Explorer lag",
     "Session stops",
 ]
+ID_LIST = re.compile(r"^E\d+(, E\d+)*$")
 
 
-def table_lines():
-    return [ln for ln in DOC.read_text().splitlines() if ln.startswith("|")]
+def table_lines(path=DOC):
+    return [ln for ln in path.read_text().splitlines() if ln.startswith("|")]
 
 
 def cells(line):
     return [c.strip() for c in line.strip().strip("|").split("|")]
 
 
-def rows():
-    lines = table_lines()
+def rows(path=DOC):
+    lines = table_lines(path)
     return {cells(ln)[0]: cells(ln) for ln in lines[2:]}
+
+
+def evidence_ids():
+    return {r[0]: r for r in rows(EVIDENCE).values()}
 
 
 def test_exactly_one_table_with_required_columns():
     lines = table_lines()
     assert cells(lines[0]) == COLUMNS
     assert set(cells(lines[1])) == {"---"}
-    # one contiguous table
     text = DOC.read_text().splitlines()
     idx = [i for i, ln in enumerate(text) if ln.startswith("|")]
     assert idx == list(range(idx[0], idx[0] + len(idx)))
@@ -55,6 +63,40 @@ def test_covers_required_constraints():
     assert [n for n in names if n in REQUIRED_ROWS] == REQUIRED_ROWS
 
 
+def test_every_cell_filled():
+    for name, row in rows().items():
+        assert len(row) == len(COLUMNS), name
+        for cell in row:
+            assert cell and "TBD" not in cell, name
+
+
+def test_one_sentence_per_cell():
+    for name, row in rows().items():
+        for cell in row:
+            assert not re.search(r"[.!?]\s+\S", cell), (name, cell)
+
+
+def test_within_word_limit():
+    assert len(DOC.read_text().split()) <= WORD_LIMIT
+
+
+def test_evidence_column_holds_ids_defined_in_evidence_file():
+    defined = evidence_ids()
+    used = set()
+    for name, row in rows().items():
+        assert ID_LIST.match(row[3]), (name, row[3])
+        used |= set(row[3].split(", "))
+    assert used == set(defined), used ^ set(defined)
+    assert "lab-constraints-evidence.md" in DOC.read_text()
+
+
+def test_evidence_is_named_not_invented():
+    # Every item names an artifact to attach or capture, or a file in the repo.
+    for eid, (_, evidence, source, status) in evidence_ids().items():
+        assert evidence and source, eid
+        assert status in {"To attach", "To capture", "To run and capture", "In repo"}, eid
+
+
 def test_records_prd_6_8_network_decisions():
     r = rows()
     assert "HTTP 80 only" in r["No domain or certificate"][2]
@@ -63,35 +105,23 @@ def test_records_prd_6_8_network_decisions():
     assert "80/443" not in DOC.read_text()
 
 
-def test_every_cell_filled():
-    for name, row in rows().items():
-        assert len(row) == len(COLUMNS), name
-        for cell in row:
-            assert cell and "TBD" not in cell, name
-
-
-def test_evidence_is_named_not_invented():
-    # Each evidence cell names a probe, screenshot, log or file to attach or capture.
-    for name, row in rows().items():
-        evidence = row[3].lower()
-        assert any(w in evidence for w in ("screenshot", "log", "probe", "output", "iam/")), name
-
-
-def test_fits_on_one_page():
-    assert len(DOC.read_text().split()) <= 1000
-
-
 def test_least_privilege_marks_enforced_and_documented():
     status = rows()["Least privilege"][5]
-    assert "Enforced:" in status and "Documented only:" in status
+    assert status.startswith("Enforced:") and "documented only:" in status
+    enforced, documented = status.split("documented only:")
     for control in (
+        "port 80 only",
+        "ALB-only serving ingress",
+        "no build-host inbound",
+        "no SSH",
         "IMDSv2",
-        "SSM instead of SSH",
-        "S3 bucket policy",
+        "bucket policy",
         "Lambda resource policies",
-        "1,800 s",
+        "1,800 s approval tokens",
     ):
-        assert control in status
+        assert control in enforced, control
+    assert "identity policies" in documented
+    assert "build-host start/stop" in documented
 
 
 @pytest.mark.skipif(
@@ -99,9 +129,8 @@ def test_least_privilege_marks_enforced_and_documented():
 )
 def test_status_matches_iam_controls():
     controls = json.loads((ROOT / "iam" / "controls.json").read_text())["controls"]
-    status = rows()["Least privilege"][5]
-    enforced, documented = status.split("**Documented only:**")
-    for c in controls:
-        if c["kind"] == "identity-policy":
-            assert c["status"] == "documented-only"
-            assert c["service"].split()[-1].lower() in documented.lower(), c["id"]
+    identity = [c for c in controls if c["kind"] == "identity-policy"]
+    assert identity and all(c["status"] == "documented-only" for c in identity)
+    enforced_ids = {c["id"] for c in controls if c["status"] == "enforced"}
+    assert {"sg-alb", "sg-serving", "sg-build-host", "ssm-not-ssh", "imdsv2"} <= enforced_ids
+    assert {"s3-bucket-policy", "approval-token"} <= enforced_ids
