@@ -51,7 +51,7 @@ def load_manifest(path: Path = DEFAULT_MANIFEST) -> dict:
 
 
 def save_manifest(manifest: dict, path: Path = DEFAULT_MANIFEST) -> None:
-    manifest = {
+    manifest = manifest | {
         "schema_version": SCHEMA_VERSION,
         "artifacts": dict(sorted(manifest["artifacts"].items())),
     }
@@ -73,6 +73,23 @@ def check_artifact(manifest: dict, name: str, models_dir: Path) -> dict:
     if actual != entry["sha256"]:
         return result | {"ok": False, "reason": "sha256 mismatch"}
     return result | {"ok": True, "reason": None}
+
+
+def verify_templates(manifest_path: Path = DEFAULT_MANIFEST) -> list[dict]:
+    """Check the pinned templates (manifest `templates` section) against their files."""
+    out = []
+    for rel, entry in sorted(load_manifest(manifest_path).get("templates", {}).items()):
+        path = Path(rel)
+        actual = sha256_file(path) if path.exists() else None
+        out.append(
+            {
+                "template": rel,
+                "expected_sha256": entry["sha256"],
+                "actual_sha256": actual,
+                "ok": actual == entry["sha256"],
+            }
+        )
+    return out
 
 
 def verify(
@@ -107,6 +124,8 @@ def main(argv: list[str] | None = None) -> int:
     else:
         names = [load_yaml(args.config)["model"]]
     result = verify(names, args.manifest, models_dir)
+    result["templates"] = verify_templates(args.manifest)
+    result["ok"] = result["ok"] and all(t["ok"] for t in result["templates"])
     json.dump(result, sys.stdout, indent=2)
     sys.stdout.write("\n")
     return 0 if result["ok"] else 1

@@ -141,8 +141,8 @@ def test_scheduled_sweep_rejects_expired_approvals_only(pipeline):
     old = started_run(pipeline)
     clock.advance(pipeline["cfg"].approval.timeout_seconds - 60)
     assert orc.handle(scheduled_event())["expired"] == []
-    fresh = orc.handle(push_event(event_id="evt-2", commit="f" * 40))["run_id"]
-    build_succeeds(pipeline, fresh)
+    # A push during the pending approval queues; the timeout ends the old run and starts it.
+    assert orc.handle(push_event(event_id="evt-2", commit="f" * 40))["action"] == "queued"
 
     clock.advance(60)
     out = orc.handle(scheduled_event())
@@ -151,9 +151,12 @@ def test_scheduled_sweep_rejects_expired_approvals_only(pipeline):
     assert rec["status"] == "failed"
     assert stage(rec, "approval")["outcome"] == "timeout"
     assert stage(rec, "approval")["details"]["decision"] == "timeout"
-    assert stage(read_record(pipeline["s3"], fresh), "approval")["status"] == "running"
-    # A sweep after the decision is a no-op, and the old link no longer works.
+    fresh = pipeline["orc"].store.lock_holder()
+    assert fresh and fresh != old
+    build_succeeds(pipeline, fresh)
+    # The fresh approval is within its window, so the next sweep leaves it alone.
     assert orc.handle(scheduled_event())["expired"] == []
+    assert stage(read_record(pipeline["s3"], fresh), "approval")["status"] == "running"
     assert deployments(pipeline) == []
 
 

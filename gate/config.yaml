@@ -1,0 +1,18 @@
+# Gate config (PRD Section 6.8). Read by `python -m gate`.
+schema_version: 1
+# report: record verdicts, exit 0. enforce: exit 1 when a rule in `thresholds` fails.
+# auto: enforce once `thresholds` exists (written by A/A calibration, T-15), report until then.
+mode: auto
+thresholds: gate/thresholds.json
+# Reference measurement (`python -m gate measure` on the reference serving config, budget 256).
+reference: artifacts/reference/measurement.json
+data:
+  d3_prompts: gate/data/d3_prompts.jsonl
+  # DEVELOPMENT FIXTURE, not frozen data: the 177-item panel from the earlier 2,000-question
+  # sample (PRD v1.3, Section 6.2.1). T-30 switches this to gate/data/d5_panel.jsonl.
+  d5_panel: tests/fixtures/d5_panel_dev177.jsonl
+# D2 (FR-05, PRD Section 6.2.1): llama-perplexity KL divergence against stored reference logits.
+d2:
+  corpus: gate/data/d2_corpus.txt
+  ctx_size: 512
+  base_logits: artifacts/reference/d2_base.kld   # never in git; S3 for the build host

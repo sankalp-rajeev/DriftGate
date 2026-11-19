@@ -70,11 +70,12 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="gate.serve", description=__doc__.splitlines()[0])
     p.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     p.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
+    p.add_argument("--models-dir", type=Path, help="override models_dir from models.yaml")
     p.add_argument("--dry-run", action="store_true", help="print the command as JSON and exit")
     args = p.parse_args(argv)
 
     config = load_yaml(args.config)
-    models_dir = Path(load_yaml(Path(config["models"]))["models_dir"])
+    models_dir = args.models_dir or Path(load_yaml(Path(config["models"]))["models_dir"])
     bin_dir = llama_bin_dir()
     cmd = build_argv(config, models_dir, bin_dir)
     if args.dry_run:

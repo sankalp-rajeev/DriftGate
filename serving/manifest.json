@@ -21,5 +21,12 @@
       "size": 1894532128,
       "source": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/91cad51170dc346986eccefdc2dd33a9da36ead9/qwen2.5-1.5b-instruct-q8_0.gguf"
     }
+  },
+  "templates": {
+    "serving/templates/reference.jinja": {
+      "sha256": "d5495a1e5db0611132a97e46a65dbb64a642a499421228b9c8b93229097fa9a4",
+      "source": "tokenizer.chat_template of qwen2.5-1.5b-instruct-q8_0.gguf (Qwen/Qwen2.5-1.5B-Instruct-GGUF@91cad51170dc346986eccefdc2dd33a9da36ead9), byte for byte",
+      "role": "pinned upstream template for D1 (rendered-template diff)"
+    }
   }
 }
