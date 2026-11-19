@@ -48,8 +48,8 @@ class DeployConfig:
 class ApprovalConfig:
     topic_arn: str
     function_url: str
-    # FR-27 "no response within a set time means reject". The value in config.json is a
-    # placeholder until the human picks it (see `timeout_seconds_note`).
+    # FR-27 / PRD 6.8: no decision within this many seconds means reject. The one-time token
+    # expires at the same moment (the approval deadline); there is no separate token TTL.
     timeout_seconds: int
 
 
