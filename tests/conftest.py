@@ -41,3 +41,6 @@ def pipeline(monkeypatch):
             "cfg": cfg,
             "topic_arn": topic_arn,
         }
+
+
+from llama_fixtures import ci_server  # noqa: E402, F401  (live llama-server fixture)
