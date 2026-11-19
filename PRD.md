@@ -466,6 +466,7 @@ Rebased on Wednesday 18 November 2026. Thanksgiving (26 Nov) is a planned day of
 | T-11 Build checks: `deploy/build.sh` with tests, D1, D2, hashes, runnable locally | FR-02, FR-04, FR-05 | Agent | 23 Nov | P3 | To do |
 | T-28 Build host in the Lab: run `build.sh` via SSM, logs and bundle to S3 | FR-16 | Human (Lab) | 25 Nov | P3 | To do |
 | T-29 Least-privilege policy documents in `iam/`, one per service, with enforced-or-documented status | NFR-06 | Agent | 24 Nov | P3 | To do |
+| T-31 `driftgate-storage` persistent stack: S3 bucket with versioning, SSE, Block Public Access (Section 6.8) | NFR-05, FR-15, FR-16 | Agent | 24 Nov | P3 | To do |
 | T-25 Lambda orchestrator, run record, EventBridge wiring | FR-15 | Agent | 24 Nov | P3 | To do (trigger path verified 17 Nov) |
 | T-10 CloudFormation per-session network stack | FR-21 | Agent | 24 Nov | P3 | To do |
 | T-12 CodeDeploy appspec and hooks, ALB target group | FR-17, FR-18 | Agent | 25 Nov | P3 | To do |
