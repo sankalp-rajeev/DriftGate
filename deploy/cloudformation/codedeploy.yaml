@@ -1,0 +1,147 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  DriftGate CodeDeploy stack (FR-17, FR-18, ADR-002). CodeDeploy application and EC2 deployment
+  group (in-place, OneAtATime, LabRole as service role) behind the serving target group of the
+  network stack, which the group refers to by name, plus the two serving instances launched from
+  the network stack's launch template. Per session, created after the network stack. Rollback on
+  alarm and the gate metric are T-13.
+
+Parameters:
+  NetworkStackName:
+    Type: String
+    Default: driftgate-net
+    Description: Name of the per-session network stack (deploy/cloudformation/network.yaml)
+  LabRoleArn:
+    Type: String
+    Description: ARN of the pre-created LabRole, used as the CodeDeploy service role
+  ApplicationName:
+    Type: String
+    Default: driftgate
+  DeploymentGroupName:
+    Type: String
+    Default: driftgate-serving
+  BucketName:
+    Type: String
+    Description: driftgate-storage bucket (BucketName output); bundles, models, reference, verdicts
+  ServingPort:
+    Type: Number
+    Default: 8080
+    Description: llama-server port; must equal the network stack ServingPort
+  ProjectTag:
+    Type: String
+    Default: driftgate
+
+Resources:
+  Application:
+    Type: AWS::CodeDeploy::Application
+    Properties:
+      ApplicationName: !Ref ApplicationName
+      ComputePlatform: Server
+
+  DeploymentGroup:
+    Type: AWS::CodeDeploy::DeploymentGroup
+    Properties:
+      ApplicationName: !Ref Application
+      DeploymentGroupName: !Ref DeploymentGroupName
+      ServiceRoleArn: !Ref LabRoleArn
+      DeploymentConfigName: CodeDeployDefault.OneAtATime
+      # Traffic control: each instance is deregistered from the target group before its hooks
+      # run and registered again only after ValidateService passes (FR-17).
+      DeploymentStyle:
+        DeploymentType: IN_PLACE
+        DeploymentOption: WITH_TRAFFIC_CONTROL
+      LoadBalancerInfo:
+        TargetGroupInfoList:
+          - Name:
+              Fn::ImportValue: !Sub "${NetworkStackName}-TargetGroupName"
+      # Both tag groups must match (AND): the serving instances of this project.
+      Ec2TagSet:
+        Ec2TagSetList:
+          - Ec2TagGroup:
+              - Key: Role
+                Value: serving
+                Type: KEY_AND_VALUE
+          - Ec2TagGroup:
+              - Key: Project
+                Value: !Ref ProjectTag
+                Type: KEY_AND_VALUE
+      AutoRollbackConfiguration:
+        Enabled: true
+        Events:
+          - DEPLOYMENT_FAILURE
+
+  ServingInstanceA:
+    Type: AWS::EC2::Instance
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId:
+          Fn::ImportValue: !Sub "${NetworkStackName}-ServingLaunchTemplateId"
+        Version: "1"
+      SubnetId: !Select
+        - 0
+        - !Split
+          - ","
+          - Fn::ImportValue: !Sub "${NetworkStackName}-InstanceSubnetIds"
+      Tags:
+        - Key: Name
+          Value: driftgate-serving-a
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          # Serving instance setup (Amazon Linux 2023): CodeDeploy agent, build tools, uv and
+          # the instance settings read by the deploy hooks. llama.cpp and the model are
+          # installed by the AfterInstall hook so they follow the revision being deployed.
+          set -euxo pipefail
+          dnf install -y ruby wget git cmake gcc-c++ make
+          cd /tmp
+          wget -q https://aws-codedeploy-${AWS::Region}.s3.${AWS::Region}.amazonaws.com/latest/install
+          chmod +x ./install
+          ./install auto
+          systemctl enable --now codedeploy-agent
+          curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+          mkdir -p /etc/driftgate
+          cat > /etc/driftgate/deploy.env <<EOF
+          DRIFTGATE_BUCKET=${BucketName}
+          DRIFTGATE_SERVING_PORT=${ServingPort}
+          EOF
+
+  ServingInstanceB:
+    Type: AWS::EC2::Instance
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId:
+          Fn::ImportValue: !Sub "${NetworkStackName}-ServingLaunchTemplateId"
+        Version: "1"
+      SubnetId: !Select
+        - 1
+        - !Split
+          - ","
+          - Fn::ImportValue: !Sub "${NetworkStackName}-InstanceSubnetIds"
+      Tags:
+        - Key: Name
+          Value: driftgate-serving-b
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          # Same setup as ServingInstanceA.
+          set -euxo pipefail
+          dnf install -y ruby wget git cmake gcc-c++ make
+          cd /tmp
+          wget -q https://aws-codedeploy-${AWS::Region}.s3.${AWS::Region}.amazonaws.com/latest/install
+          chmod +x ./install
+          ./install auto
+          systemctl enable --now codedeploy-agent
+          curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+          mkdir -p /etc/driftgate
+          cat > /etc/driftgate/deploy.env <<EOF
+          DRIFTGATE_BUCKET=${BucketName}
+          DRIFTGATE_SERVING_PORT=${ServingPort}
+          EOF
+
+Outputs:
+  ApplicationName:
+    Value: !Ref Application
+  DeploymentGroupName:
+    Value: !Ref DeploymentGroup
+  ServingInstanceIds:
+    Value: !Join [",", [!Ref ServingInstanceA, !Ref ServingInstanceB]]
