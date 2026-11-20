@@ -46,8 +46,19 @@ FAULT_DIFFS = {
     "F5": ({"chat_template": "serving/templates/f5.jinja"}, "--chat-template-file"),
     "F6": ({"sampler__temperature": 0.2}, "--temp"),
     "F7": ({"context__ctx_size": 64}, "--ctx-size"),
-    "F9": ({"threads": 2}, "--threads"),
+    "F9": ({"threads": 1}, "--threads"),
 }
+
+
+@pytest.mark.parametrize(
+    ("machine", "threads"),
+    [("local-Sankalps-Razer", "8"), ("t3.large", "2"), ("local-other", "2")],
+)
+def test_launcher_selects_threads_for_the_reference_key_machine(monkeypatch, machine, threads):
+    monkeypatch.setenv("DRIFTGATE_INSTANCE_TYPE", machine)
+    before = copy.deepcopy(CONFIG)
+    assert _flag(_argv(CONFIG), "--threads") == threads
+    assert CONFIG == before  # selection must preserve the map for config hashing
 
 
 def test_reference_config_uses_reference_model_and_template():

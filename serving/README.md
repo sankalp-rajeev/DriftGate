@@ -23,3 +23,8 @@ reference logits are stored under `reference/<model-sha256>/<config-hash>/<insta
 `<config-hash>` is the SHA-256 of the effective serving config; `gate/reference.py` defines
 exactly which fields count (host, port and comments do not; template bytes, KV cache, context,
 threads, sampler and the llama.cpp commit do).
+
+`threads` maps the reference key's instance type to a count: `local-Sankalps-Razer` uses 8,
+`t3.large` uses 2, and other machines use `default` (2). The launcher uses the same machine
+resolution as the reference key, including `DRIFTGATE_INSTANCE_TYPE`. The whole map is hashed;
+F9 overrides it with the scalar 1. See `docs/deviations/2026-11-19-thread-count.md`.

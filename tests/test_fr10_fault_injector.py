@@ -61,6 +61,19 @@ def test_f3_sets_the_prd_kv_cache_flags(tmp_path):
     assert meta["diff_lines"] == 6
 
 
+@pytest.mark.parametrize("machine", ["local-Sankalps-Razer", "t3.large", "local-other"])
+def test_f9_changes_this_machines_thread_count_to_one(tmp_path, monkeypatch, machine):
+    monkeypatch.setenv("DRIFTGATE_INSTANCE_TYPE", machine)
+    _, _, config = _bundle(tmp_path, "F9")
+    base, faulted = _argv(REF), _argv(config)
+    at = base.index("--threads") + 1
+    assert base[at] in {"8", "2"}
+    assert faulted[at] == "1"
+    assert [i for i, pair in enumerate(zip(base, faulted, strict=True)) if pair[0] != pair[1]] == [
+        at
+    ]
+
+
 def test_f4_edits_only_the_chat_template(tmp_path):
     out, meta, config = _bundle(tmp_path, "F4")
     assert config == REF
@@ -178,8 +191,3 @@ def test_f5_deletes_only_the_tool_call_instruction_in_the_tools_branch(tmp_path)
         )
         == after
     )
-
-
-def test_f9_is_threads_auto_to_one(tmp_path):
-    _, _, config = _bundle(tmp_path, "F9")
-    assert REF["threads"] == -1 and config["threads"] == 1
