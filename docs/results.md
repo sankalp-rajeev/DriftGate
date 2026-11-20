@@ -30,11 +30,22 @@ counted as a D5 detection at every budget.
 to have no effect because the gate explicitly requests greedy decoding. Every detector
 that ran had 0/2 detections at all three budgets.
 
-**F5 prediction held on the public inputs.** D1 was expected to catch the tools-only
-template edit, while D3 and D5 were expected to miss it on prompts without tools.
-D1 caught 2/2 and D3 and public-panel D5 each caught 0/2 at all budgets. The corresponding
-hidden-pool prediction remains untested in the saved study. That comparison is tracked
-in [T-16](https://github.com/sankalp-rajeev/DriftGate/issues/20).
+**F5's D5 prediction held on both panels.** D1 caught the tools-only template edit in
+2/2 runs. D3 and public-panel D5 each detected 0/2 at all budgets. The FR-14 check also
+found 0/2 D5 detections on the L1 hidden panels. Both panels used prompts without tools.
+
+| L1 D5 panel | Seed 1 correct (reference → F5) | Seed 2 correct (reference → F5) | Detections |
+| --- | ---: | ---: | ---: |
+| Public, fixed | 37/64 → 37/64 | 37/64 → 37/64 | 0/2 (0%) |
+| Hidden, sampled per run | 39/64 → 39/64 | 38/64 → 38/64 | 0/2 (0%) |
+
+For each run seed, 64 items were sampled without replacement from the frozen hidden pool
+in file order using Python's seeded sampler. The reference and F5 each measured the same
+sample with greedy decoding and measurement seed 0. All 64 answers matched within each
+pair, so both accuracy drops were 0. The saved L1 D5 rule fires only above 0, and the
+exact 95% detection interval is 0–84.19% for each panel. The
+[hidden-pool run record](results/f5-hidden-pool.json) includes the sampling method,
+paired scores and artifact hashes. Raw measurements are under `runs/2026-11-20-t16/`.
 
 ## Calibration and reproducibility
 
