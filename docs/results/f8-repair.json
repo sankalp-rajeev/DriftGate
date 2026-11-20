@@ -1,0 +1,313 @@
+{
+  "implementation_commit": "4cd2924fac291e79a0f29c866abdb3f30461566d",
+  "f8": {
+    "tag": "b12557",
+    "commit": "b94959a64d011915d77a5381c7d4846dcda99530",
+    "date": "2026-11-19T22:21:24+00:00",
+    "study_start": "2026-11-19T21:29:00-05:00"
+  },
+  "baseline_server_version": "version: 1.0.0-dev (build 12491, commit 8c16babba)\nbuilt with GNU 13.3.0 for Linux x86_64",
+  "baseline_build_info": "b12491-8c16babba",
+  "baseline_measurement_sha256": "20f0a6fe2f3e2557195474e3494bf384e50194cd2adeefbb9ae92b6bd63b19e6",
+  "f8_bundle_lock_sha256": "d6cbc9aacc18ca6bb38e9f093ec446c6d55299ceb2dfd40168ac3786d6a8ba34",
+  "matrix_sha256": "56698de3c6242d49771294f7bd08371cb26b9c05d8e8ff5088c5296ba8d9def5",
+  "thresholds_sha256": {
+    "thresholds-L1.json": "62801ec4824893f3ed870e27abb3adc1e873058bde4ba70fe049f5467a945fa0",
+    "thresholds-L2.json": "74e51a02373959a47298c625fa082f43b841f2bde256ed22b09872382d851155",
+    "thresholds-L3.json": "b66609e75296f5dc6d620a93e989f6f8a4191b475751c76ea06f6dfd8c05184c"
+  },
+  "corrected_runs": [
+    {
+      "source": "faults/F8/run-00.measurement.json",
+      "run_seed": 1,
+      "measurement_seed": 0,
+      "build_info": "b12557-b94959a64",
+      "server_binary": {
+        "version": "version: 1.0.0-dev (build 12557, commit b94959a64)\nbuilt with GNU 13.3.0 for Linux x86_64",
+        "commit": "b94959a64",
+        "build_info": "b12557-b94959a64",
+        "baseline_build_info": "b12491-8c16babba"
+      },
+      "measurement_sha256": "ae52bd89f2b1d2512031e93f23c6959f8932a06a8ccb00077adb29a6cc704bf3",
+      "record_sha256": "e1860138db1d7874188f552b6b57118cf7986be42584e54a0a2fee3a7266193e",
+      "serving_config_sha256": "5bfae19f9ce7a8e59f49bdae1ab993460cdd1711e6584a2af89434810a35d568",
+      "d3_identical_to_reference": 64,
+      "d5_identical_to_reference": 256,
+      "d2_metrics": {
+        "mean_kld": -0.0,
+        "p99_kld": 3.3e-05,
+        "max_kld": 5.1e-05,
+        "median_kld": 0.0,
+        "same_top_p_pct": 100.0
+      }
+    },
+    {
+      "source": "faults/F8/run-01.measurement.json",
+      "run_seed": 2,
+      "measurement_seed": 0,
+      "build_info": "b12557-b94959a64",
+      "server_binary": {
+        "version": "version: 1.0.0-dev (build 12557, commit b94959a64)\nbuilt with GNU 13.3.0 for Linux x86_64",
+        "commit": "b94959a64",
+        "build_info": "b12557-b94959a64",
+        "baseline_build_info": "b12491-8c16babba"
+      },
+      "measurement_sha256": "28863d249714f7db441a4404f1371d45884edcf728e4f55da0e3f3af8143664e",
+      "record_sha256": "0fbeecc6cae8b8ccf70fc2c5ca24b7be9f6c23141bb8f8089f0fb92c44c1181c",
+      "serving_config_sha256": "5bfae19f9ce7a8e59f49bdae1ab993460cdd1711e6584a2af89434810a35d568",
+      "d3_identical_to_reference": 64,
+      "d5_identical_to_reference": 256,
+      "d2_metrics": {
+        "mean_kld": -0.0,
+        "p99_kld": 3.3e-05,
+        "max_kld": 5.1e-05,
+        "median_kld": 0.0,
+        "same_top_p_pct": 100.0
+      }
+    }
+  ],
+  "archived_downgrade": {
+    "tag": "v1.0.0",
+    "commit": "b1b770d90d94cad9e9ea5b993bdbc383a522fb28",
+    "runs": [
+      {
+        "source": "faults/F8-downgrade-v1.0.0/run-00.measurement.json",
+        "run_seed": 1,
+        "measurement_seed": 0,
+        "build_info": "b12359-b1b770d90",
+        "server_binary": null,
+        "measurement_sha256": "a7dd85069e3a7c2e9f604698b8939135c4ad0d9f3cdc6e9a04a06f0464321d2c",
+        "record_sha256": "834454b520eaf2443c3044be372ff923e808598ac24499917d15da550bdd7b83",
+        "serving_config_sha256": "5bfae19f9ce7a8e59f49bdae1ab993460cdd1711e6584a2af89434810a35d568",
+        "d3_identical_to_reference": 64,
+        "d5_identical_to_reference": 256,
+        "d2_metrics": {
+          "mean_kld": -0.0,
+          "p99_kld": 3.3e-05,
+          "max_kld": 5.1e-05,
+          "median_kld": 0.0,
+          "same_top_p_pct": 100.0
+        }
+      },
+      {
+        "source": "faults/F8-downgrade-v1.0.0/run-01.measurement.json",
+        "run_seed": 2,
+        "measurement_seed": 0,
+        "build_info": "b12359-b1b770d90",
+        "server_binary": null,
+        "measurement_sha256": "bad1ca41989f425b60d04446f3879b311955f0d13cda0d8fc8b3d485dc2cc7b4",
+        "record_sha256": "8c13044823b6e98993c30f203d30a6ad89e965d387b945beaf79c819e3b03a62",
+        "serving_config_sha256": "5bfae19f9ce7a8e59f49bdae1ab993460cdd1711e6584a2af89434810a35d568",
+        "d3_identical_to_reference": 64,
+        "d5_identical_to_reference": 256,
+        "d2_metrics": {
+          "mean_kld": -0.0,
+          "p99_kld": 3.3e-05,
+          "max_kld": 5.1e-05,
+          "median_kld": 0.0,
+          "same_top_p_pct": 100.0
+        }
+      }
+    ]
+  },
+  "f8_matrix_rows": [
+    {
+      "fault": "F8",
+      "level": "L1",
+      "detector": "D1",
+      "runs": "2",
+      "detections": "0",
+      "rate": "0.0",
+      "ci95_low": "0.0",
+      "ci95_high": "0.841886116991581",
+      "d3_seconds_mean": "15.8532935"
+    },
+    {
+      "fault": "F8",
+      "level": "L1",
+      "detector": "D2",
+      "runs": "2",
+      "detections": "0",
+      "rate": "0.0",
+      "ci95_low": "0.0",
+      "ci95_high": "0.841886116991581",
+      "d3_seconds_mean": "15.8532935"
+    },
+    {
+      "fault": "F8",
+      "level": "L1",
+      "detector": "D3",
+      "runs": "2",
+      "detections": "0",
+      "rate": "0.0",
+      "ci95_low": "0.0",
+      "ci95_high": "0.841886116991581",
+      "d3_seconds_mean": "15.8532935"
+    },
+    {
+      "fault": "F8",
+      "level": "L1",
+      "detector": "D5",
+      "runs": "2",
+      "detections": "0",
+      "rate": "0.0",
+      "ci95_low": "0.0",
+      "ci95_high": "0.841886116991581",
+      "d3_seconds_mean": "15.8532935"
+    },
+    {
+      "fault": "F8",
+      "level": "L1",
+      "detector": "D6",
+      "runs": "2",
+      "detections": "0",
+      "rate": "0.0",
+      "ci95_low": "0.0",
+      "ci95_high": "0.841886116991581",
+      "d3_seconds_mean": "15.8532935"
+    },
+    {
+      "fault": "F8",
+      "level": "L1",
+      "detector": "gate",
+      "runs": "2",
+      "detections": "0",
+      "rate": "0.0",
+      "ci95_low": "0.0",
+      "ci95_high": "0.841886116991581",
+      "d3_seconds_mean": "15.8532935"
+    },
+    {
+      "fault": "F8",
+      "level": "L2",
+      "detector": "D1",
+      "runs": "2",
+      "detections": "0",
+      "rate": "0.0",
+      "ci95_low": "0.0",
+      "ci95_high": "0.841886116991581",
+      "d3_seconds_mean": "32.6928535"
+    },
+    {
+      "fault": "F8",
+      "level": "L2",
+      "detector": "D2",
+      "runs": "2",
+      "detections": "0",
+      "rate": "0.0",
+      "ci95_low": "0.0",
+      "ci95_high": "0.841886116991581",
+      "d3_seconds_mean": "32.6928535"
+    },
+    {
+      "fault": "F8",
+      "level": "L2",
+      "detector": "D3",
+      "runs": "2",
+      "detections": "0",
+      "rate": "0.0",
+      "ci95_low": "0.0",
+      "ci95_high": "0.841886116991581",
+      "d3_seconds_mean": "32.6928535"
+    },
+    {
+      "fault": "F8",
+      "level": "L2",
+      "detector": "D5",
+      "runs": "2",
+      "detections": "0",
+      "rate": "0.0",
+      "ci95_low": "0.0",
+      "ci95_high": "0.841886116991581",
+      "d3_seconds_mean": "32.6928535"
+    },
+    {
+      "fault": "F8",
+      "level": "L2",
+      "detector": "D6",
+      "runs": "2",
+      "detections": "0",
+      "rate": "0.0",
+      "ci95_low": "0.0",
+      "ci95_high": "0.841886116991581",
+      "d3_seconds_mean": "32.6928535"
+    },
+    {
+      "fault": "F8",
+      "level": "L2",
+      "detector": "gate",
+      "runs": "2",
+      "detections": "0",
+      "rate": "0.0",
+      "ci95_low": "0.0",
+      "ci95_high": "0.841886116991581",
+      "d3_seconds_mean": "32.6928535"
+    },
+    {
+      "fault": "F8",
+      "level": "L3",
+      "detector": "D1",
+      "runs": "2",
+      "detections": "0",
+      "rate": "0.0",
+      "ci95_low": "0.0",
+      "ci95_high": "0.841886116991581",
+      "d3_seconds_mean": "62.653134"
+    },
+    {
+      "fault": "F8",
+      "level": "L3",
+      "detector": "D2",
+      "runs": "2",
+      "detections": "0",
+      "rate": "0.0",
+      "ci95_low": "0.0",
+      "ci95_high": "0.841886116991581",
+      "d3_seconds_mean": "62.653134"
+    },
+    {
+      "fault": "F8",
+      "level": "L3",
+      "detector": "D3",
+      "runs": "2",
+      "detections": "0",
+      "rate": "0.0",
+      "ci95_low": "0.0",
+      "ci95_high": "0.841886116991581",
+      "d3_seconds_mean": "62.653134"
+    },
+    {
+      "fault": "F8",
+      "level": "L3",
+      "detector": "D5",
+      "runs": "2",
+      "detections": "0",
+      "rate": "0.0",
+      "ci95_low": "0.0",
+      "ci95_high": "0.841886116991581",
+      "d3_seconds_mean": "62.653134"
+    },
+    {
+      "fault": "F8",
+      "level": "L3",
+      "detector": "D6",
+      "runs": "2",
+      "detections": "0",
+      "rate": "0.0",
+      "ci95_low": "0.0",
+      "ci95_high": "0.841886116991581",
+      "d3_seconds_mean": "62.653134"
+    },
+    {
+      "fault": "F8",
+      "level": "L3",
+      "detector": "gate",
+      "runs": "2",
+      "detections": "0",
+      "rate": "0.0",
+      "ci95_low": "0.0",
+      "ci95_high": "0.841886116991581",
+      "d3_seconds_mean": "62.653134"
+    }
+  ]
+}

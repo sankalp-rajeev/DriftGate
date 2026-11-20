@@ -15,7 +15,7 @@ use the saved L1 rows in `runs/2026-11-19-study/matrix.csv`.
 | F5 · Tool-call template | 2/2 | — | 0/2 | 0/2 | 0/2 | 2/2 | 14.72 |
 | F6 · Sampler default | 0/2 | — | 0/2 | 0/2 | 0/2 | 0/2 | 14.69 |
 | F7 · Context window | 0/2 | — | 0/2 | 2/2 | 0/2 | 2/2 | 16.12 |
-| F8 · Engine bump | 0/2 | 0/2 | 0/2 | 0/2 | 0/2 | 0/2 | 16.97 |
+| F8 · Engine bump to b12557 | 0/2 | 0/2 | 0/2 | 0/2 | 0/2 | 0/2 | 15.85 |
 | F9 · One serving thread | 0/2 | — | 0/2 | 0/2 | 2/2 | 2/2 | 53.98 |
 
 Cells show detections / completed runs. A dash means the detector did not run. D4 was cut.
@@ -25,6 +25,19 @@ L1 prefix. It averaged 15.28 s across the 30 A/A runs and excludes the rest of t
 For a valid 0/2 cell the exact 95% interval is 0–84.19%, and for 2/2 it is 15.81–100%.
 Both F7 runs hit HTTP 400 on D5 item 14 (355 tokens for a 256-token context), which
 counted as a D5 detection at every budget.
+
+**F8 used [`b12557`](https://github.com/ggml-org/llama.cpp/releases/tag/b12557).**
+Both corrected repetitions reported `b12557-b94959a64` from the live server, and
+`llama-server --version` confirmed commit `b94959a64`. The baseline reported
+`b12491-8c16babba`. No detector fired in either repeat at any budget. The
+[F8 run record](results/f8-repair.json) includes the per-run versions, tag date,
+and detections. The matrix excludes the downgrade described in the
+[tag-selection deviation](deviations/2026-11-20-f8-tag.md).
+
+**Unplanned downgrade observation.** The four-day-older `v1.0.0` build (`b1b770d90`,
+13 November) gave bitwise-identical D3 outputs on 128/128 prompts and identical
+D5 answers on 512/512 items against the 17 November baseline. Those two runs
+are archived as `F8-downgrade-v1.0.0`.
 
 **F6 prediction held.** Changing the default temperature from 0.8 to 1.3 was expected
 to have no effect because the gate explicitly requests greedy decoding. Every detector
@@ -89,9 +102,9 @@ and [flagged run record](results/f3-kv.json).
 The [plot data](results/rq2-points.csv) come from `rq2-points.json` in the saved study
 and the separate flagged run. The published calculation uses the existing exact
 permutation analysis in `analysis/rq2.py`. The [run index](results/provenance.csv)
-maps each original measurement to its config SHA-256, seeds, engine build and artifact
-SHA-256. Study checkout commits are reconstructed from the run timestamps and local Git
-history because the original measurement records did not store the repository commit.
+maps each measurement to its config SHA-256, seeds, engine build and artifact SHA-256.
+The original checkout commits were reconstructed from run timestamps and local Git
+history. The corrected F8 entries cite the implementation commit for the repair.
 The Q8_0, Q4_K_M, Q2_K and original F3 points reuse `aa/run-00`, `faults/F1/run-00`,
 `faults/F2/run-00` and `faults/F3/run-00` respectively. The other quantizations use the
 matching `sweep/<quantization>/run-00` files.
