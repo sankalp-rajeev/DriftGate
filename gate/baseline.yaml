@@ -4,4 +4,4 @@
 # it from a serving config whose hashes differ from these.
 schema_version: 1
 model_sha256: d7efb072e7724d25048a4fda0a3e10b04bdef5d06b1403a1c93bd9f1240a63c8
-config_hash: d0db861e0c31b4d0928cd73cceb36f81f2f32e63dec47dd78a656d1a405fc541
+config_hash: 5c1277b1db8a99d27b529ae10370372e4da22ad6134478f18dcd8aae19d75d49

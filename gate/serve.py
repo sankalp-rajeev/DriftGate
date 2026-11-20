@@ -17,6 +17,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from gate import reference as ref_store
 from gate.manifest import DEFAULT_CONFIG, DEFAULT_MANIFEST, load_yaml, verify
 
 DEFAULT_BIN = "~/llama.cpp/build/bin"
@@ -28,6 +29,9 @@ def llama_bin_dir() -> Path:
 
 def build_argv(config: dict, models_dir: Path, bin_dir: Path) -> list[str]:
     server, cache, sampler = config["server"], config["cache"], config["sampler"]
+    threads = config["threads"]
+    if isinstance(threads, dict):
+        threads = threads.get(ref_store.instance_type(), threads["default"])
     argv = [
         str(bin_dir / "llama-server"),
         "--model", str(models_dir / config["model"]),
@@ -35,7 +39,7 @@ def build_argv(config: dict, models_dir: Path, bin_dir: Path) -> list[str]:
         "--port", str(server["port"]),
         "--parallel", str(server["parallel"]),
         "--ctx-size", str(config["context"]["ctx_size"]),
-        "--threads", str(config["threads"]),
+        "--threads", str(threads),
         "--jinja",
         "--chat-template-file", str(config["chat_template"]),
         "--cache-type-k", str(cache["type_k"]),

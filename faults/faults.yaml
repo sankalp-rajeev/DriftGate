@@ -29,7 +29,8 @@ faults:
     template:
       - find: "system\\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>"
         replace: "system\\nYou are a helpful assistant.<|im_end|>"
-  # F5, F6, F7 and F9 as pre-registered (PRD Section 6.8). F8 is built by the study runner:
+  # F5, F6 and F7 as pre-registered (PRD Section 6.8); F9 per the thread-count deviation.
+  # F8 is built by the study runner:
   # the latest llama.cpp release tag, recorded in the run log, as a diff to the llama_cpp_lock file.
   F5:
     layer: serving
@@ -51,7 +52,7 @@ faults:
       context.ctx_size: 256
   F9:
     layer: engine
-    description: Serving threads -1 (auto) to 1 (RQ3 control)
+    description: This machine's serving thread count changed to 1 (RQ3 control)
     set:
       threads: 1
   # RQ2 quantization sweep, analysis only (PRD Section 6.8): Q8_0 is AA, Q4_K_M is F1, Q2_K is F2.

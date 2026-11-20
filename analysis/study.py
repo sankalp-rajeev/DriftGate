@@ -1,5 +1,6 @@
 """Overnight study runner (T-15): resumable, time-boxed, and refuses to start before the
-pre-registration is merged into main (FR-11).
+pre-registration is merged into main (FR-11). The latest dated deviation merged into main
+supersedes its fault hash and baseline pins; that deviation must be in this checkout too.
 
   make study STOP_AT=07:00          # run until the next 07:00, finishing the current run
   python -m analysis.study --status # progress
@@ -35,7 +36,12 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
+import yaml
+
+from gate.reference import DEFAULT_BASELINE, load_baseline
+
 PREREG = "docs/prereg/preregistration.md"
+DEVIATIONS = "docs/deviations"
 FAULTS_FILE = Path("faults/faults.yaml")
 N_CALIBRATION, N_HELD_OUT = 20, 10
 FAULTS = ["F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9"]
@@ -58,9 +64,12 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def prereg_check(faults_file: Path = FAULTS_FILE, run=subprocess.run) -> str | None:
-    """None when the pre-registration is merged into origin/main and this checkout includes it
-    and matches what it cites; otherwise the reason to refuse."""
+def prereg_check(
+    faults_file: Path = FAULTS_FILE,
+    run=subprocess.run,
+    baseline_file: Path = DEFAULT_BASELINE,
+) -> str | None:
+    """Validate merged pre-registration/deviation pins without starting any measurements."""
     try:
         git("fetch", "--quiet", "origin", "main", run=run)
         commit = git("log", "-1", "--format=%H", "origin/main", "--", PREREG, run=run)
@@ -71,12 +80,57 @@ def prereg_check(faults_file: Path = FAULTS_FILE, run=subprocess.run) -> str | N
     ancestor = run(["git", "merge-base", "--is-ancestor", commit, "HEAD"], capture_output=True)
     if ancestor.returncode != 0:
         return f"this checkout does not include the pre-registration commit {commit[:10]}"
-    text = git("show", f"{commit}:{PREREG}", run=run)
-    cited = re.search(r"faults/faults\.yaml[^\n]*?([0-9a-f]{64})", text)
-    if not cited:
-        return "the pre-registration does not cite the SHA-256 of faults/faults.yaml"
-    if sha256(faults_file) != cited.group(1):
-        return f"{faults_file} differs from the version the pre-registration cites"
+    try:
+        text = git("show", f"{commit}:{PREREG}", run=run)
+        paths = git("ls-tree", "-r", "--name-only", "origin/main", "--", DEVIATIONS, run=run)
+        deviations = sorted(
+            p
+            for p in paths.splitlines()
+            if re.fullmatch(r"docs/deviations/\d{4}-\d{2}-\d{2}-.+\.md", p)
+        )
+        source = "the pre-registration"
+        if deviations:
+            source = deviations[-1]
+            revision = git("log", "-1", "--format=%H", "origin/main", "--", source, run=run)
+            ancestor = run(
+                ["git", "merge-base", "--is-ancestor", revision, "HEAD"], capture_output=True
+            )
+            if not revision or ancestor.returncode != 0:
+                return f"this checkout does not include the latest deviation {source}"
+            text = git("show", f"origin/main:{source}", run=run)
+            front = re.match(r"\A---\n(.*?)\n---(?:\n|$)", text, re.DOTALL)
+            if not front:
+                return f"{source} must have YAML front matter with faults_sha256 and baseline"
+            doc = yaml.safe_load(front.group(1))
+            cited_hash, cited_baseline = doc["faults_sha256"], doc["baseline"]
+        else:
+            cited = re.search(r"faults/faults\.yaml[^\n]*?([0-9a-f]{64})", text)
+            if not cited:
+                return "the pre-registration does not cite the SHA-256 of faults/faults.yaml"
+            cited_hash = cited.group(1)
+            row = re.search(r"Reference serving config[^\n]+", text)
+            hashes = re.findall(r"[0-9a-f]{64}", row.group() if row else "")
+            if len(hashes) != 2:
+                return "the pre-registration does not cite the baseline model and config hashes"
+            cited_baseline = dict(zip(("model_sha256", "config_hash"), hashes, strict=True))
+        if not isinstance(cited_hash, str) or not re.fullmatch(r"[0-9a-f]{64}", cited_hash):
+            return f"{source}: faults_sha256 must be a SHA-256 hex digest"
+        if sha256(faults_file) != cited_hash:
+            return f"{faults_file} differs from the version {source} cites"
+        baseline = load_baseline(baseline_file)
+        if any(
+            baseline[field] != cited_baseline[field] for field in ("model_sha256", "config_hash")
+        ):
+            return f"{baseline_file} differs from the baseline {source} cites"
+    except (
+        subprocess.CalledProcessError,
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+        yaml.YAMLError,
+    ) as e:
+        return f"cannot validate the pre-registration/deviation: {e}"
     return None
 
 

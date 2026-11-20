@@ -22,7 +22,7 @@ cache:
   type_k: f16
   type_v: f16
   flash_attn: auto
-threads: -1          # llama.cpp default (auto)
+threads: {local-Sankalps-Razer: 8, t3.large: 2, default: 2}
 sampler:
   temperature: 0.8
   top_k: 40

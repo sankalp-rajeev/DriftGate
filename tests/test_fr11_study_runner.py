@@ -7,20 +7,47 @@ import json
 import subprocess
 
 from analysis import study
+from gate.reference import load_baseline
+
+BASELINE = load_baseline()
 
 
 class FakeGit:
     """Stands in for subprocess.run for git: `log` result, `show` text and ancestor result."""
 
-    def __init__(self, commit="abc123", text="", ancestor=True, fail_fetch=False):
+    def __init__(
+        self,
+        commit="abc123",
+        text="",
+        ancestor=True,
+        fail_fetch=False,
+        deviations=None,
+        missing_deviation=False,
+    ):
         self.commit, self.text, self.ancestor, self.fail_fetch = commit, text, ancestor, fail_fetch
+        self.deviations = deviations or {}
+        self.missing_deviation = missing_deviation
 
     def __call__(self, cmd, capture_output=True, text=True, check=False):
         sub = cmd[1]
         if sub == "fetch" and self.fail_fetch:
             raise subprocess.CalledProcessError(128, cmd)
         out = {"log": self.commit, "show": self.text}.get(sub, "")
+        if sub == "ls-tree":
+            out = "\n".join(self.deviations)
+        if sub == "log" and cmd[-1] in self.deviations:
+            out = "deviation123"
+        if sub == "show":
+            path = cmd[2].split(":", 1)[1]
+            out = self.deviations.get(path, self.text)
+            if path == study.PREREG:
+                out += (
+                    f"\n| Reference serving config | model SHA-256 `{BASELINE['model_sha256']}`, "
+                    f"config hash `{BASELINE['config_hash']}` |\n"
+                )
         code = 0 if sub != "merge-base" or self.ancestor else 1
+        if sub == "merge-base" and cmd[3] == "deviation123" and self.missing_deviation:
+            code = 1
         return subprocess.CompletedProcess(cmd, code, stdout=out, stderr="")
 
 
@@ -50,6 +77,69 @@ def test_refuses_when_faults_yaml_differs_from_the_cited_hash(tmp_path):
     msg = study.prereg_check(f, run=FakeGit(text=f"faults/faults.yaml SHA-256 {other}"))
     assert "differs" in msg
     assert "does not cite" in study.prereg_check(f, run=FakeGit(text="nothing"))
+
+
+def _deviation(digest, baseline=BASELINE):
+    return (
+        "---\n"
+        f"faults_sha256: {digest}\n"
+        "baseline:\n"
+        f"  model_sha256: {baseline['model_sha256']}\n"
+        f"  config_hash: {baseline['config_hash']}\n"
+        "---\n# Thread-count deviation\n"
+    )
+
+
+def test_latest_merged_deviation_supersedes_prereg_fault_hash_and_baseline(tmp_path):
+    f, digest = _faults_file(tmp_path)
+    baseline = dict(BASELINE, config_hash="a" * 64)
+    baseline_file = tmp_path / "baseline.yaml"
+    baseline_file.write_text(json.dumps(baseline))
+    deviations = {
+        "docs/deviations/2026-11-19-thread-count.md": _deviation(digest, baseline),
+        "docs/deviations/2026-11-18-old.md": "superseded",
+    }
+    run = FakeGit(text=f"faults/faults.yaml SHA-256 {'0' * 64}", deviations=deviations)
+    assert study.prereg_check(f, run=run, baseline_file=baseline_file) is None
+
+
+def test_checkout_must_include_the_latest_merged_deviation(tmp_path):
+    f, digest = _faults_file(tmp_path)
+    run = FakeGit(
+        deviations={"docs/deviations/2026-11-19-thread-count.md": _deviation(digest)},
+        missing_deviation=True,
+    )
+    assert "does not include the latest deviation" in study.prereg_check(f, run=run)
+
+
+def test_refuses_a_baseline_not_cited_by_the_latest_deviation(tmp_path):
+    f, digest = _faults_file(tmp_path)
+    doc = _deviation(digest, dict(BASELINE, config_hash="a" * 64))
+    run = FakeGit(deviations={"docs/deviations/2026-11-19-thread-count.md": doc})
+    assert "baseline" in study.prereg_check(f, run=run)
+
+
+def test_refuses_a_baseline_not_cited_by_the_preregistration(tmp_path):
+    f, digest = _faults_file(tmp_path)
+    baseline_file = tmp_path / "baseline.yaml"
+    baseline_file.write_text(json.dumps(dict(BASELINE, config_hash="a" * 64)))
+    run = FakeGit(text=f"faults/faults.yaml SHA-256 {digest}")
+    assert "baseline" in study.prereg_check(f, run=run, baseline_file=baseline_file)
+
+
+def test_latest_deviation_does_not_allow_a_changed_fault_file(tmp_path):
+    f, _ = _faults_file(tmp_path)
+    run = FakeGit(deviations={"docs/deviations/2026-11-19-thread-count.md": _deviation("a" * 64)})
+    assert "differs" in study.prereg_check(f, run=run)
+
+
+def test_malformed_latest_deviation_does_not_fall_back_to_prereg(tmp_path):
+    f, digest = _faults_file(tmp_path)
+    run = FakeGit(
+        text=f"faults/faults.yaml SHA-256 {digest}",
+        deviations={"docs/deviations/2026-11-19-thread-count.md": "no pins"},
+    )
+    assert "front matter" in study.prereg_check(f, run=run)
 
 
 def test_main_refuses_to_start_without_the_preregistration(monkeypatch, capsys, tmp_path):

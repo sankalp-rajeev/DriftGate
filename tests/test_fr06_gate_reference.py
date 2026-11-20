@@ -75,6 +75,17 @@ def test_model_change_changes_the_key_through_its_sha256():
     assert ref.reference_key(f1, "x") != ref.reference_key(SERVING, "x")
 
 
+def test_thread_map_is_hashed_in_full_independent_of_machine(monkeypatch):
+    monkeypatch.setenv(ref.INSTANCE_ENV, "local-Sankalps-Razer")
+    original = ref.config_hash(SERVING)
+    # Changing another machine's setting must still invalidate this machine's reference.
+    changed = copy.deepcopy(SERVING)
+    changed["threads"]["t3.large"] = 3
+    assert ref.config_hash(changed) != original
+    monkeypatch.setenv(ref.INSTANCE_ENV, "t3.large")
+    assert ref.config_hash(SERVING) == original
+
+
 def test_instance_type_resolution():
     assert ref.instance_type("t3.large", env={}) == "t3.large"
     assert ref.instance_type(None, env={ref.INSTANCE_ENV: "t3.medium"}) == "t3.medium"
