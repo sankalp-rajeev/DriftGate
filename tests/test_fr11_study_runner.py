@@ -5,8 +5,12 @@ import datetime as dt
 import hashlib
 import json
 import subprocess
+from pathlib import Path
+
+import pytest
 
 from analysis import study
+from gate.llama_client import detector_error
 from gate.reference import load_baseline
 
 BASELINE = load_baseline()
@@ -210,6 +214,170 @@ def test_stops_at_the_deadline_after_finishing_the_current_run(tmp_path):
     assert "deadline 07:00 reached; next unit is b" in (tmp_path / "study.log").read_text()
 
 
+def test_failed_run_is_saved_with_traceback_and_next_run_still_executes(tmp_path):
+    class FailingPlan(study.Study):
+        def plan(self):
+            def fail():
+                raise RuntimeError("candidate process exited 2")
+
+            yield study.Unit("F7-1", lambda: False, fail)
+            yield study.Unit("F7-2", lambda: False, lambda: (self.out / "next.done").touch())
+
+    runner = FailingPlan(tmp_path)
+    assert study.execute(runner, dt.datetime(2099, 1, 1)) == "incomplete"
+    assert (tmp_path / "next.done").exists()
+    failure = json.loads((tmp_path / "failures/F7-1.json").read_text())
+    assert failure["status"] == "failed"
+    assert "RuntimeError: candidate process exited 2" in failure["attempts"][0]["traceback"]
+    assert "F7-1" in study.status(tmp_path)["failed_runs"]
+    log = (tmp_path / "study.log").read_text()
+    for event in ("start F7-1", "failed F7-1", "done F7-1", "start F7-2", "done F7-2"):
+        assert event in log
+
+
+def test_partial_fault_run_is_not_skipped_on_resume(tmp_path):
+    directory = tmp_path / "faults/F7"
+    directory.mkdir(parents=True)
+    (directory / "run-00.json").write_text('{"schema": "driftgate.aa-run/1"}')
+    runner = study.Study(tmp_path)
+    unit = runner.aa(
+        "F7-1", Path("artifacts/bundles/F7"), directory, 0, ["--d1", "--run-seed", "1"]
+    )
+    assert unit.done() is False
+    assert study.status(tmp_path)["fault_runs"]["F7"] == 0
+    assert "faults/F7/run-00.json" in study.status(tmp_path)["invalid_runs"]
+
+
+def _complete_fault(directory, fault="F7", error=False):
+    """A known complete L3 record without any model execution."""
+    directory.mkdir(parents=True)
+    path = directory / "run-00.json"
+    inputs = {"config_sha256": study.sha256(Path("serving/config.yaml"))}
+    m = {
+        "schema": "driftgate.measurement/1",
+        "seed": 0,
+        "budget": 64,
+        "d5_budget": 256,
+        "inputs": inputs,
+    }
+    for detector, key, n in (("d3", "d3_prompts", 64), ("d5", "d5_panel", 256)):
+        file = Path("gate/data") / ("d3_prompts.jsonl" if detector == "d3" else "d5_panel.jsonl")
+        inputs[key], inputs[key + "_sha256"] = str(file), study.sha256(file)
+        ids = [json.loads(line)["id"] for line in file.read_text().splitlines()][:n]
+        row = (
+            {
+                "tokens": [1],
+                "top": [[[1, 0.0]]],
+                "timings": {"prompt_ms": 10, "predicted_ms": 10, "prompt_n": 1, "predicted_n": 1},
+            }
+            if detector == "d3"
+            else {"predicted": "A", "correct": True}
+        )
+        m[detector] = [{"id": item_id, **row} for item_id in ids]
+    if error:
+        m["d5"] = [
+            {
+                "id": m["d5"][0]["id"],
+                "error": {"status_code": 400, "message": "context", "kind": "http"},
+            }
+        ]
+    record = {
+        "schema": "driftgate.aa-run/1",
+        "seed": 0,
+        "run_seed": 1,
+        "run": 0,
+        "level": "L3",
+        "budget": 64,
+        "d5_budget": 256,
+        "bundle": {"fault": fault, "files": {"serving/config.yaml": inputs["config_sha256"]}},
+        "verdict": {
+            "schema": "driftgate.verdict/2",
+            "seed": 0,
+            "budget": 64,
+            "candidate": {"inputs": inputs},
+            "decision": {"exit_code": 1 if error else 0},
+            "detectors": {
+                "D3": {"mean_agreement_share": 1.0},
+                "D5": detector_error(m["d5"]) or {"accuracy_drop": 0.0},
+                "D6": {"ratio": {"p95_itl_ms": 1.0}},
+            },
+        },
+    }
+    path.write_text(json.dumps(record))
+    path.with_suffix(".measurement.json").write_text(json.dumps(m))
+    path.with_suffix(".d1.json").write_text('{"ok": true}')
+    return path
+
+
+@pytest.mark.parametrize("error", [False, True])
+def test_complete_faults_including_error_detections_are_skipped(tmp_path, error):
+    directory = tmp_path / "faults/F7"
+    path = _complete_fault(directory, error=error)
+    runner = study.Study(tmp_path)
+    unit = runner.aa(
+        "F7-1", Path("artifacts/bundles/F7"), directory, 0, ["--d1", "--run-seed", "1"]
+    )
+    assert unit.done() is True
+    assert study.status(tmp_path)["fault_runs"]["F7"] == 1
+    path.with_suffix(".d1.json").unlink()
+    assert unit.done() is False
+    path.with_suffix(".d1.json").write_text("broken JSON")
+    assert unit.done() is False
+
+
+def test_failure_does_not_block_later_runs_when_fault_bundle_is_missing(tmp_path):
+    class MissingBundle(study.Study):
+        def plan(self):
+            def missing():
+                raise FileNotFoundError("fault bundle is unavailable")
+
+            yield self.aa("F7-1", missing, self.out / "faults/F7", 0, ["--d1"])
+            yield study.Unit("F9-1", lambda: False, lambda: (self.out / "next.done").touch())
+
+    assert study.execute(MissingBundle(tmp_path), dt.datetime(2099, 1, 1)) == "incomplete"
+    assert (tmp_path / "next.done").exists()
+
+
+def test_failed_attempt_history_survives_a_successful_resume(tmp_path):
+    class RetryPlan(study.Study):
+        broken = True
+
+        def plan(self):
+            def run():
+                if self.broken:
+                    raise SystemExit("candidate failed")
+                (self.out / "complete").touch()
+
+            yield study.Unit("F7-1", (self.out / "complete").exists, run)
+
+    runner = RetryPlan(tmp_path)
+    assert study.execute(runner, dt.datetime(2099, 1, 1)) == "incomplete"
+    assert study.execute(runner, dt.datetime(2099, 1, 1)) == "incomplete"
+    runner.broken = False
+    assert study.execute(runner, dt.datetime(2099, 1, 1)) == "complete"
+    assert study.status(tmp_path)["failed_runs"] == {}
+    history = json.loads((tmp_path / "failures/F7-1.json").read_text())
+    assert history["status"] == "recovered" and len(history["attempts"]) == 2
+    assert "SystemExit: candidate failed" in history["attempts"][0]["traceback"]
+
+
+def test_closed_console_does_not_lose_study_log_event(tmp_path, monkeypatch):
+    def broken(*args, **kwargs):
+        raise BrokenPipeError("console closed")
+
+    monkeypatch.setattr("builtins.print", broken)
+    study.Study(tmp_path).log("start F7-1")
+    assert "start F7-1" in (tmp_path / "study.log").read_text()
+
+
+def test_missing_determinism_does_not_abort_planning_independent_sweep_runs(tmp_path):
+    runner = study.Study(tmp_path)
+    names = [unit.name for unit in runner.plan()]
+    assert "fault-plan" in names
+    assert "sweep-Q6_K" in names
+    assert names[-1] == "analysis"
+
+
 def test_plan_order_and_repetition_count_follow_the_prereg(tmp_path, monkeypatch):
     s = study.Study(tmp_path)
     monkeypatch.setattr(s, "bundle", lambda f: tmp_path / f)
@@ -235,4 +403,5 @@ def test_status_counts_finished_runs(tmp_path):
     (tmp_path / "faults/F1").mkdir(parents=True)
     (tmp_path / "faults/F1/run-00.json").write_text("{}")
     st = study.status(tmp_path)
-    assert st["aa_runs"] == "1/30" and st["fault_runs"]["F1"] == 1 and st["fault_runs"]["F2"] == 0
+    assert st["aa_runs"] == "0/30" and st["fault_runs"]["F1"] == 0 and st["fault_runs"]["F2"] == 0
+    assert st["invalid_runs"] == ["aa/run-00.json", "faults/F1/run-00.json"]

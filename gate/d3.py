@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import math
 
-from gate.llama_client import LlamaServer, user_prompt
+from gate.llama_client import LlamaServer, RequestError, detector_error, user_prompt
 from gate.stats import mean, percentile
 
 N_NEW = 32
@@ -29,14 +29,18 @@ FLOOR = 1e-6
 def measure(server: LlamaServer, prompts: list[dict], seed: int) -> list[dict]:
     out = []
     for p in prompts:
-        resp = server.completion(
-            user_prompt(server, p["instruction"]),
-            n_predict=N_NEW,
-            temperature=0,
-            n_probs=N_PROBS,
-            seed=seed,
-            cache_prompt=False,
-        )
+        try:
+            resp = server.completion(
+                user_prompt(server, p["instruction"]),
+                n_predict=N_NEW,
+                temperature=0,
+                n_probs=N_PROBS,
+                seed=seed,
+                cache_prompt=False,
+            )
+        except RequestError as e:
+            out.append({"id": p["id"], "error": e.details})
+            break
         steps = resp["completion_probabilities"]
         out.append(
             {
@@ -88,6 +92,8 @@ def compare_one(ref: dict, cand: dict, n_new: int = N_NEW) -> dict:
 
 
 def metrics(reference: list[dict], candidate: list[dict]) -> dict:
+    if error := detector_error(candidate):
+        return error
     ref_by_id = {r["id"]: r for r in reference}
     per_prompt = [compare_one(ref_by_id[c["id"]], c) for c in candidate]
     kls = [r["approx_kl"] for r in per_prompt]

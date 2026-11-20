@@ -84,10 +84,23 @@ def score(dets: dict, thresholds: dict) -> dict:
     """Per-rule results, per-detector scores and the gate score."""
     results = []
     for r in validate(thresholds):
+        if dets[r["detector"]].get("status") == "error":
+            results.append(
+                r
+                | {
+                    "observed": None,
+                    "score": ZERO_MARGIN_SCORE,
+                    "ok": False,
+                    "error": dets[r["detector"]]["error"],
+                }
+            )
+            continue
         observed = _lookup(dets[r["detector"]], r["metric"])
         s = rule_score(observed, r["kind"], r["value"])
         results.append(r | {"observed": observed, "score": s, "ok": s <= 1})
-    per_detector: dict[str, float] = {}
+    per_detector: dict[str, float] = {
+        d: ZERO_MARGIN_SCORE for d, result in dets.items() if result.get("status") == "error"
+    }
     for r in results:
         per_detector[r["detector"]] = max(per_detector.get(r["detector"], -math.inf), r["score"])
     gate = max(per_detector.values())

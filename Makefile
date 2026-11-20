@@ -49,10 +49,10 @@ serve: ## Run llama-server from serving/config.yaml (CONFIG=... to override)
 	uv run python -m gate.serve --config $(or $(CONFIG),serving/config.yaml)
 
 study: ## Overnight study, resumable and time-boxed (STOP_AT=07:00; needs the pre-registration on main)
-	uv run python -m analysis.study --stop-at $(STOP_AT)
+	uv run python -m analysis.study --stop-at $(STOP_AT) $(if $(OUT),--out $(OUT))
 
 study-status: ## Progress of the study
-	uv run python -m analysis.study --status; tail -n 5 $$(ls -d runs/*-study | tail -1)/study.log
+	uv run python -m analysis.study --status $(if $(OUT),--out $(OUT)); tail -n 5 $(if $(OUT),$(OUT),$$(ls -d runs/*-study | tail -1))/study.log
 
 orchestrator-zip: ## Package the orchestrator Lambda (committed HEAD) to artifacts/orchestrator.zip
 	mkdir -p artifacts && git archive --format=zip -o artifacts/orchestrator.zip HEAD orchestrator/

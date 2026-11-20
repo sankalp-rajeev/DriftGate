@@ -8,6 +8,7 @@ ratio. The budget threshold comes from A/A calibration, not from here.
 
 from __future__ import annotations
 
+from gate.llama_client import detector_error
 from gate.stats import percentile
 
 
@@ -22,6 +23,8 @@ def p95s(d3_run: list[dict]) -> dict:
 
 
 def metrics(reference: list[dict], candidate: list[dict]) -> dict:
+    if error := detector_error(candidate):
+        return error
     ref, cand = p95s(reference), p95s(candidate)
     return {
         "n_requests": len(candidate),

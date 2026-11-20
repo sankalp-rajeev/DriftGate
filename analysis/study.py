@@ -32,12 +32,15 @@ import shutil
 import subprocess
 import sys
 import time
+import traceback
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 
+from gate.llama_client import detector_error
+from gate.manifest import load_yaml
 from gate.reference import DEFAULT_BASELINE, load_baseline
 
 PREREG = "docs/prereg/preregistration.md"
@@ -155,6 +158,118 @@ def study_dir(root: Path = Path("runs"), today: dt.date | None = None) -> Path:
     return root / f"{(today or dt.date.today()).isoformat()}-study"
 
 
+def run_complete(
+    path: Path,
+    *,
+    require_d1: bool = True,
+    require_d2: bool = False,
+    d5_only: bool = False,
+    fault: str | None = None,
+    run_seed: int | None = None,
+) -> bool:
+    """A complete study run has parseable, matching record, measurement and sidecars.
+
+    A terminal request error is completed detector evidence, not an unfinished run.
+    Historical successful measurements remain valid under the error-handling deviation.
+    """
+    try:
+        record = json.loads(path.read_text())
+        m = json.loads(path.with_suffix(".measurement.json").read_text())
+        lv = load_yaml(Path("gate/config.yaml"))["levels"][LEVEL]
+        if (
+            record["schema"] != "driftgate.aa-run/1"
+            or m["schema"] != "driftgate.measurement/1"
+            or record["seed"] != 0
+            or m["seed"] != 0
+            or record["level"] != LEVEL
+            or record["run"] != int(path.stem.removeprefix("run-"))
+            or record["budget"] != lv["d3"]
+            or record["d5_budget"] != lv["d5"]
+            or m["budget"] != lv["d3"]
+            or m["d5_budget"] != lv["d5"]
+        ):
+            return False
+        if fault is not None and record["bundle"]["fault"] != fault:
+            return False
+        if run_seed is not None and record["run_seed"] != run_seed:
+            return False
+        if m["inputs"]["config_sha256"] != record["bundle"]["files"]["serving/config.yaml"]:
+            return False
+        for detector, data_key, n, fields in (
+            ("d3", "d3_prompts", 0 if d5_only else lv["d3"], {"tokens", "top", "timings"}),
+            ("d5", "d5_panel", lv["d5"], {"predicted", "correct"}),
+        ):
+            data = Path(m["inputs"][data_key])
+            if sha256(data) != m["inputs"][data_key + "_sha256"]:
+                return False
+            expected_ids = [json.loads(line)["id"] for line in data.read_text().splitlines()][:n]
+            rows = m[detector]
+            if len(rows) > n or (n and not rows):
+                return False
+            if [r["id"] for r in rows] != expected_ids[: len(rows)]:
+                return False
+            for index, row in enumerate(rows):
+                if "error" in row:
+                    error = row["error"]
+                    if (
+                        index != len(rows) - 1
+                        or not isinstance(error["message"], str)
+                        or error["kind"] not in ("http", "timeout")
+                        or not (
+                            error["status_code"] is None or isinstance(error["status_code"], int)
+                        )
+                    ):
+                        return False
+                elif not fields <= row.keys():
+                    return False
+                elif detector == "d3" and (
+                    len(row["tokens"]) != len(row["top"])
+                    or not {"prompt_ms", "predicted_ms", "prompt_n", "predicted_n"}
+                    <= row["timings"].keys()
+                ):
+                    return False
+                elif detector == "d5" and (
+                    not isinstance(row["predicted"], str) or not isinstance(row["correct"], bool)
+                ):
+                    return False
+            if len(rows) < n and "error" not in rows[-1]:
+                return False
+        if not d5_only:
+            verdict = record["verdict"]
+            if (
+                verdict["schema"] != "driftgate.verdict/2"
+                or verdict["seed"] != 0
+                or verdict["budget"] != lv["d3"]
+                or verdict["decision"]["exit_code"] not in (0, 1)
+                or verdict["candidate"]["inputs"] != m["inputs"]
+                or not {"D3", "D5", "D6"} <= verdict["detectors"].keys()
+            ):
+                return False
+            for detector, rows, metric in (
+                ("D3", m["d3"], "mean_agreement_share"),
+                ("D5", m["d5"], "accuracy_drop"),
+                ("D6", m["d3"], "ratio"),
+            ):
+                result = verdict["detectors"][detector]
+                error = detector_error(rows)
+                if (error and result != error) or (not error and metric not in result):
+                    return False
+        if require_d1 and not isinstance(
+            json.loads(path.with_suffix(".d1.json").read_text())["ok"], bool
+        ):
+            return False
+        if require_d2:
+            d2 = json.loads(path.with_suffix(".d2.json").read_text())
+            if (
+                d2["threads"] != 2
+                or not {"mean_kld", "p99_kld", "same_top_p_pct"} <= d2["metrics"].keys()
+            ):
+                return False
+        return True
+    except (OSError, ValueError, KeyError, TypeError, IndexError, AttributeError):
+        return False
+
+
 def deterministic(runs: list[dict]) -> bool:
     """Whether every run gives bitwise-identical D3 (tokens, top logprobs) and D5 outputs."""
 
@@ -175,6 +290,7 @@ class Unit:
     name: str
     done: Callable[[], bool]
     run: Callable[[], None]
+    validate: bool = False
 
 
 class Study:
@@ -184,9 +300,38 @@ class Study:
 
     def log(self, msg: str) -> None:
         line = f"{dt.datetime.now().isoformat(timespec='seconds')} {msg}"
-        print(line, flush=True)
         with (self.out / "study.log").open("a") as f:
             f.write(line + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        try:
+            print(line, flush=True)
+        except BrokenPipeError:
+            pass  # a closed console must not lose the durable study event
+
+    def failure(self, name: str, error: BaseException) -> None:
+        path = self.out / "failures" / f"{name}.json"
+        path.parent.mkdir(exist_ok=True)
+        doc = json.loads(path.read_text()) if path.exists() else {"attempts": []}
+        attempt = {
+            "at": dt.datetime.now().isoformat(),
+            "error": str(error),
+            "traceback": traceback.format_exc(),
+        }
+        log = self.out / "logs" / f"{name}.log"
+        if log.exists():
+            attempt["subprocess_log"] = str(log)
+            attempt["subprocess_log_tail"] = log.read_text(errors="replace")[-16000:]
+        doc["attempts"].append(attempt)
+        doc.update(unit=name, status="failed")
+        path.write_text(json.dumps(doc, indent=2) + "\n")
+
+    def recovered(self, name: str) -> None:
+        path = self.out / "failures" / f"{name}.json"
+        if path.exists():
+            doc = json.loads(path.read_text())
+            doc["status"] = "recovered"
+            path.write_text(json.dumps(doc, indent=2) + "\n")
 
     def sh(self, name: str, cmd: list[str], env: dict | None = None) -> None:
         with (self.out / "logs" / f"{name}.log").open("ab") as f:
@@ -194,15 +339,37 @@ class Study:
         if proc.returncode != 0:
             raise RuntimeError(f"{name} exited {proc.returncode}; see logs/{name}.log")
 
-    def aa(self, name: str, bundle: Path, out: Path, i: int, extra: list[str], env=None) -> Unit:
-        cmd = [
+    def aa(
+        self,
+        name: str,
+        bundle: Path | Callable[[], Path],
+        out: Path,
+        i: int,
+        extra: list[str],
+        env=None,
+        fault: str | None = None,
+    ) -> Unit:
+        def run():
+            resolved = bundle() if callable(bundle) else bundle
+            cmd = [
             self.python, "-m", "faults.aa", "--runs", "1", "--start", str(i), "--seed", "0",
-            "--level", LEVEL, "--bundle", str(bundle), "--out", str(out), *extra,
-        ]  # fmt: skip
+            "--level", LEVEL, "--bundle", str(resolved), "--out", str(out), *extra,
+            ]  # fmt: skip
+            self.sh(name, cmd, env() if callable(env) else env)
+
+        seed = int(extra[extra.index("--run-seed") + 1]) if "--run-seed" in extra else i
         return Unit(
             name,
-            lambda: (out / f"run-{i:02d}.json").exists(),
-            lambda: self.sh(name, cmd, env() if callable(env) else env),
+            lambda: run_complete(
+                out / f"run-{i:02d}.json",
+                require_d1="--d1" in extra,
+                require_d2="--d2" in extra,
+                d5_only="--d5-only" in extra,
+                fault=fault or (bundle.name if isinstance(bundle, Path) else None),
+                run_seed=seed,
+            ),
+            run,
+            True,
         )
 
     def bundle(self, fault: str) -> Path:
@@ -218,29 +385,62 @@ class Study:
         yield from self.timing()
         for i in range(N_CALIBRATION + N_HELD_OUT):
             kind = "calibration" if i < N_CALIBRATION else "heldout"
-            yield self.aa(f"aa-{i:02d}-{kind}", self.bundle("AA"), aa_dir, i, ["--d2", "--d1"])
+            yield self.aa(
+                f"aa-{i:02d}-{kind}",
+                lambda: self.bundle("AA"),
+                aa_dir,
+                i,
+                ["--d2", "--d1"],
+                fault="AA",
+            )
         yield self.determinism_unit()
         yield self.f8_unit()
-        reps = self.repetition_count()
+        try:
+            reps = self.repetition_count()
+        except (OSError, ValueError, KeyError, TypeError) as error:
+
+            def unavailable(error=error):
+                raise ValueError(
+                    f"fault repetitions require a successful determinism check: {error}"
+                )
+
+            yield Unit("fault-plan", lambda: False, unavailable)
+            reps = 0
         for fault in FAULTS:
             for k in range(reps):
-                bundle = self.bundle(fault) if fault != "F8" else Path("artifacts/bundles/F8")
+                bundle = (
+                    (lambda fault=fault: self.bundle(fault))
+                    if fault != "F8"
+                    else Path("artifacts/bundles/F8")
+                )
                 extra = ["--d1", "--run-seed", str(k + 1)] + (
                     ["--d2"] if fault in D2_FAULTS else []
                 )
                 env = self.f8_env if fault == "F8" else None
                 yield self.aa(
-                    f"{fault}-{k + 1}", bundle, self.out / "faults" / fault, k, extra, env
+                    f"{fault}-{k + 1}", bundle, self.out / "faults" / fault, k, extra, env, fault
                 )
         for model, fault in SWEEP_NEW.items():
             extra = ["--d2", "--d5-only"]
             yield self.aa(
-                f"sweep-{model}", self.bundle(fault), self.out / "sweep" / model, 0, extra
+                f"sweep-{model}",
+                lambda fault=fault: self.bundle(fault),
+                self.out / "sweep" / model,
+                0,
+                extra,
+                fault=fault,
             )
         yield self.analysis_unit()
 
     def timing(self) -> Iterator[Unit]:
-        unit = self.aa("timing", self.bundle("AA"), self.out / "timing", 0, ["--d2", "--d1"])
+        unit = self.aa(
+            "timing",
+            lambda: self.bundle("AA"),
+            self.out / "timing",
+            0,
+            ["--d2", "--d1"],
+            fault="AA",
+        )
         yield unit
 
         def report():
@@ -256,6 +456,11 @@ class Study:
         from analysis.calibrate import load_runs
 
         def run():
+            if not all(
+                run_complete(self.out / "aa" / f"run-{i:02d}.json", require_d2=True, fault="AA")
+                for i in range(N_CALIBRATION)
+            ):
+                raise ValueError("determinism requires all 20 complete calibration A/A runs")
             runs = load_runs(self.out / "aa")[:N_CALIBRATION]
             same = deterministic(runs)
             doc = {"identical": same, "repetitions": repetitions(same), "runs_compared": len(runs)}
@@ -265,7 +470,10 @@ class Study:
         return Unit("determinism", lambda: (self.out / "determinism.json").exists(), run)
 
     def repetition_count(self) -> int:
-        return json.loads((self.out / "determinism.json").read_text())["repetitions"]
+        count = json.loads((self.out / "determinism.json").read_text())["repetitions"]
+        if not isinstance(count, int) or count not in (2, 5):
+            raise ValueError(f"invalid repetition count {count!r}")
+        return count
 
     def f8_env(self) -> dict:
         info = json.loads((self.out / "f8.json").read_text())
@@ -311,6 +519,14 @@ class Study:
 
     def analysis_unit(self) -> Unit:
         def run():
+            missing = []
+            for unit in self.plan():
+                if unit.name == "analysis":
+                    break
+                if not unit.done():
+                    missing.append(unit.name)
+            if missing:
+                raise ValueError(f"analysis requires complete runs: {', '.join(missing)}")
             from analysis import calibrate, matrix, rq2
             from gate import reference as ref_store
             from gate.manifest import load_yaml
@@ -356,23 +572,79 @@ class Study:
 
 def execute(study: Study, stop: dt.datetime, now=dt.datetime.now, sleep=time.sleep) -> str:
     """Run units until done or the deadline; returns 'complete' or 'stopped'."""
+    failed = False
     for unit in study.plan():
         if unit.done():
+            study.recovered(unit.name)
             continue
         if now() >= stop:
             study.log(f"deadline {stop:%H:%M} reached; next unit is {unit.name}")
             return "stopped"
         study.log(f"start {unit.name}")
         t0 = time.monotonic()
-        unit.run()
-        study.log(f"done {unit.name} in {time.monotonic() - t0:.0f}s")
-    study.log("study complete")
-    return "complete"
+        outcome = "ok"
+        try:
+            unit.run()
+            if unit.validate and not unit.done():
+                raise ValueError(f"{unit.name} did not produce a complete, valid run")
+        except (Exception, SystemExit) as e:
+            failed = True
+            outcome = "failed"
+            study.failure(unit.name, e)
+            study.log(f"failed {unit.name}: {type(e).__name__}: {e}")
+        else:
+            study.recovered(unit.name)
+        finally:
+            study.log(f"done {unit.name} in {time.monotonic() - t0:.0f}s ({outcome})")
+    result = "incomplete" if failed else "complete"
+    study.log(f"study {result}")
+    return result
 
 
 def status(out: Path) -> dict:
+    invalid = set()
+
+    def complete(path: Path) -> bool:
+        sweep = path.parent.parent.name == "sweep"
+        fault = (
+            path.parent.name
+            if path.parent.parent.name == "faults"
+            else (SWEEP_NEW.get(path.parent.name) if sweep else "AA")
+        )
+        ok = run_complete(
+            path,
+            require_d1=not sweep,
+            require_d2=sweep or fault == "AA" or fault in D2_FAULTS,
+            d5_only=sweep,
+            fault=fault,
+        )
+        if not ok:
+            invalid.add(str(path.relative_to(out)))
+        return ok
+
     def n(pattern: str) -> int:
-        return sum(1 for f in out.glob(pattern) if re.fullmatch(r"run-\d+\.json", f.name))
+        return sum(
+            1 for f in out.glob(pattern) if re.fullmatch(r"run-\d+\.json", f.name) and complete(f)
+        )
+
+    failures = {
+        p.stem: {"traceback_file": str(p), "error": doc["attempts"][-1]["error"]}
+        for p in sorted((out / "failures").glob("*.json"))
+        if (doc := json.loads(p.read_text())).get("status") == "failed"
+    }
+    # Preserve and expose failures from the original runner, which wrote only child logs.
+    for log in (out / "logs").glob("F*-*.log"):
+        if not re.fullmatch(r"F[1-9]-\d+", log.stem):
+            continue
+        fault, repetition = log.stem.split("-")
+        record = out / "faults" / fault / f"run-{int(repetition) - 1:02d}.json"
+        text = log.read_text(errors="replace")
+        if "Traceback (most recent call last)" in text and not (
+            record.exists() and complete(record)
+        ):
+            failures.setdefault(
+                log.stem, {"traceback_file": str(log), "error": text.splitlines()[-1]}
+            )
 
     reps = None
     if (out / "determinism.json").exists():
@@ -387,6 +659,8 @@ def status(out: Path) -> dict:
         "repetitions_per_fault": reps,
         "sweep_runs": n("sweep/*/run-00.json"),
         "analysis": (out / "rq2.json").exists(),
+        "failed_runs": failures,
+        "invalid_runs": sorted(invalid),
     }
 
 

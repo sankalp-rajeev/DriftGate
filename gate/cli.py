@@ -33,9 +33,9 @@ from pathlib import Path
 
 from gate import d3, d5, d6, telemetry
 from gate import reference as ref_store
-from gate.llama_client import LlamaServer
+from gate.llama_client import LlamaServer, RequestError
 from gate.manifest import load_yaml
-from gate.score import THRESHOLDS_SCHEMA, score
+from gate.score import THRESHOLDS_SCHEMA, ZERO_MARGIN_SCORE, score
 
 MEASUREMENT_SCHEMA = "driftgate.measurement/1"
 VERDICT_SCHEMA = "driftgate.verdict/2"
@@ -91,13 +91,30 @@ def measure(
             f"budget {budget}/{d5_budget} outside 1..{len(prompts)} prompts, "
             f"1..{len(panel)} panel items"
         )
-    props = server.props()
+    preflight_error = None
+    try:
+        props = server.props()
+    except RequestError as error:
+        props = {}
+        preflight_error = error.details
     t0 = time.monotonic()
     with _span(tel, "D3"):
-        d3_run = [] if skip_d3 else d3.measure(server, prompts[:budget], seed)
+        d3_run = (
+            []
+            if skip_d3
+            else (
+                [{"id": prompts[0]["id"], "error": preflight_error}]
+                if preflight_error
+                else d3.measure(server, prompts[:budget], seed)
+            )
+        )
     t1 = time.monotonic()
     with _span(tel, "D5"):
-        d5_run = d5.measure(server, panel[:d5_budget], seed)
+        d5_run = (
+            [{"id": panel[0]["id"], "error": preflight_error}]
+            if preflight_error
+            else d5.measure(server, panel[:d5_budget], seed)
+        )
     t2 = time.monotonic()
     return {
         "schema": MEASUREMENT_SCHEMA,
@@ -127,6 +144,8 @@ def measure(
 
 
 def _check_pair(reference: dict, candidate: dict) -> None:
+    if any("error" in row for detector in ("d3", "d5") for row in reference[detector]):
+        raise ValueError("reference measurement contains request errors")
     for m in (reference, candidate):
         if m.get("schema") != MEASUREMENT_SCHEMA:
             raise ValueError(f"unsupported measurement schema {m.get('schema')!r}")
@@ -178,6 +197,11 @@ def decide(dets: dict, mode: str, thresholds_path: Path, env=None) -> dict:
         if not thresholds_path.exists():
             raise ValueError(f"enforce mode needs {thresholds_path}")
         scored = score(dets, json.loads(thresholds_path.read_text()))
+    errors = {d: ZERO_MARGIN_SCORE for d, result in dets.items() if result.get("status") == "error"}
+    if errors:
+        scored["scores"] = {**(scored["scores"] or {}), **errors}
+        scored["gate_score"] = max(scored["scores"].values())
+        scored["passed"] = False
     fail = forced or scored["passed"] is False
     return {
         "mode": effective,
@@ -362,6 +386,8 @@ def _reference(args, gate_config: dict, tel) -> int:
         args.config,
         tel,
     )
+    if any("error" in row for detector in ("d3", "d5") for row in m[detector]):
+        raise ValueError("reference measurement contains request errors; reference not written")
     m["reference"] = {
         "schema": REFERENCE_SCHEMA,
         "key": key,
