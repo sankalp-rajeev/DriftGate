@@ -1,0 +1,36 @@
+{
+  "command": [
+    "llama-perplexity",
+    "--model",
+    "models/qwen2.5-1.5b-instruct-q8_0.gguf",
+    "--ctx-size",
+    "512",
+    "--threads",
+    "2",
+    "--kl-divergence-base",
+    "artifacts/reference/d7efb072e7724d25048a4fda0a3e10b04bdef5d06b1403a1c93bd9f1240a63c8/5c1277b1db8a99d27b529ae10370372e4da22ad6134478f18dcd8aae19d75d49/local-Sankalps-Razer/d2_base.kld",
+    "--kl-divergence",
+    "--cache-type-k",
+    "q4_0",
+    "--cache-type-v",
+    "q4_0",
+    "--flash-attn",
+    "on"
+  ],
+  "build": "version: 1.0.0-dev (build 12491, commit 8c16babba)\nbuilt with GNU 13.3.0 for Linux x86_64",
+  "model_sha256": "d7efb072e7724d25048a4fda0a3e10b04bdef5d06b1403a1c93bd9f1240a63c8",
+  "base_logits_sha256": "1f886ef4caab0ad419c6074117afd7dfa48bbc8a1d170f64bfe4d0a503ad8cb2",
+  "metrics": {
+    "mean_kld": 5.337437,
+    "p99_kld": 14.053483,
+    "max_kld": 17.372725,
+    "median_kld": 4.751091,
+    "same_top_p_pct": 4.804
+  },
+  "llama_cpp_commit": "8c16babba5d4c66e28a19d86e572e4b04f522d52",
+  "corpus_sha256": "6c61f209b53a8f7e0ee25e22815b8472d1a29cf891f0a29bca35ae82cd285b75",
+  "accuracy_drop": 0.578125,
+  "d5_source": "runs/2026-11-19-study/faults/F3/run-00.measurement.json",
+  "raw_log_sha256": "7b84848e9d94a3f46760559b39c9697029e30847c1348cb40c3c40f7fb0ecc27",
+  "exploratory": true
+}
