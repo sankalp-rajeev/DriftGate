@@ -9,12 +9,15 @@ import hashlib
 import json
 import math
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
 class FakeLlama:
-    def __init__(self, shift=0):
+    def __init__(self, shift=0, errors=None, delays=None):
         self.shift = shift
+        self.errors = errors or {}
+        self.delays = delays or {}
         fake = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -27,13 +30,20 @@ class FakeLlama:
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
-                self.wfile.write(body)
+                try:
+                    self.wfile.write(body)
+                except BrokenPipeError:
+                    pass  # timeout regression: the client has already disconnected
 
             def do_GET(self):
                 if self.path == "/health":
                     self._send({"status": "ok"})
                 elif self.path == "/props":
-                    self._send({"model_path": "models/fake.gguf", "build_info": "fake"})
+                    if 0 in fake.errors:
+                        status, message = fake.errors[0]
+                        self._send({"error": {"message": message}}, status)
+                    else:
+                        self._send({"model_path": "models/fake.gguf", "build_info": "fake"})
                 else:
                     self._send({"error": "not found"}, 404)
 
@@ -43,6 +53,11 @@ class FakeLlama:
                     text = req["messages"][-1]["content"]
                     self._send({"prompt": f"<|user|>{text}<|assistant|>"})
                 elif self.path == "/completion":
+                    time.sleep(fake.delays.get(req.get("n_predict"), 0))
+                    if req.get("n_predict") in fake.errors:
+                        status, message = fake.errors[req["n_predict"]]
+                        self._send({"error": {"message": message}}, status)
+                        return
                     self._send(fake.completion(req))
                 else:
                     self._send({"error": "not found"}, 404)

@@ -61,6 +61,17 @@ def test_score_of_exactly_one_passes():
     assert s["passed"] is True
 
 
+def test_request_error_fails_even_without_a_threshold_for_that_detector():
+    dets = {**DETS, "D5": {"status": "error", "error": {"status_code": 400, "message": "context"}}}
+    result = score.score(dets, _t(_r("D3", "mean_agreement_share", "agreement", 0.0)))
+    assert result["passed"] is False
+    assert result["scores"]["D5"] > 1
+    result = score.score(dets, _t(_r("D5", "accuracy_drop", "upper", 0.0)))
+    assert result["passed"] is False
+    assert result["rules"][0]["observed"] is None
+    assert result["rules"][0]["error"]["status_code"] == 400
+
+
 @pytest.mark.parametrize(
     "rule",
     [

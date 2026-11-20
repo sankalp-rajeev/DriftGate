@@ -8,6 +8,7 @@ import math
 from pathlib import Path
 
 import pytest
+from fake_llama import FakeLlama
 
 from gate import cli
 from gate.llama_client import LlamaServer
@@ -84,6 +85,122 @@ def _measurement(tokens, correct, prompt_ms=50.0):
 
 REF = _measurement([[1, 2, 3], [4, 5, 6]], [True, False])
 CAND = _measurement([[1, 2, 3], [4, 7, 8]], [False, False], prompt_ms=80.0)
+
+
+def test_http_error_is_a_detector_detection_and_preserves_other_measurements(tmp_path):
+    data = GATE_CONFIG["data"]
+    paths = (Path(data["d3_prompts"]), Path(data["d5_panel"]))
+    with FakeLlama() as healthy:
+        reference = cli.measure(LlamaServer(f"http://127.0.0.1:{healthy.port}"), 2, 0, *paths)
+    with FakeLlama(errors={1: (400, "prompt exceeds context size 256")}) as broken:
+        candidate = cli.measure(LlamaServer(f"http://127.0.0.1:{broken.port}"), 2, 0, *paths)
+    verdict = cli.verdict(
+        reference, candidate, dict(GATE_CONFIG, thresholds=str(tmp_path / "none"))
+    )
+    assert len(candidate["d3"]) == 2
+    assert verdict["detectors"]["D5"]["status"] == "error"
+    assert verdict["detectors"]["D5"]["error"]["status_code"] == 400
+    assert "context size 256" in verdict["detectors"]["D5"]["error"]["message"]
+    assert verdict["detectors"]["D3"]["mean_agreement_share"] == 1.0
+    assert verdict["decision"]["exit_code"] == 1
+    assert verdict["decision"]["passed"] is False
+
+
+@pytest.mark.parametrize("error_kind", ["http", "timeout"])
+def test_d3_request_error_also_marks_d6_and_keeps_d5_running(tmp_path, error_kind):
+    data = GATE_CONFIG["data"]
+    paths = (Path(data["d3_prompts"]), Path(data["d5_panel"]))
+    with FakeLlama() as healthy:
+        reference = cli.measure(LlamaServer(f"http://127.0.0.1:{healthy.port}"), 2, 0, *paths)
+    kwargs = (
+        {"errors": {32: (503, "temporarily unavailable")}}
+        if error_kind == "http"
+        else {"delays": {32: 0.2}}
+    )
+    with FakeLlama(**kwargs) as broken:
+        candidate = cli.measure(
+            LlamaServer(f"http://127.0.0.1:{broken.port}", timeout=0.05), 2, 0, *paths
+        )
+    verdict = cli.verdict(
+        reference, candidate, dict(GATE_CONFIG, thresholds=str(tmp_path / "none"))
+    )
+    for det in ("D3", "D6"):
+        result = verdict["detectors"][det]
+        assert result["status"] == "error"
+        assert result["error"]["kind"] == error_kind
+        assert result["error"]["status_code"] == (503 if error_kind == "http" else None)
+        assert result["error"]["message"]
+    assert verdict["detectors"]["D5"]["n_items"] == 2
+    assert verdict["decision"]["exit_code"] == 1
+    json.dumps(candidate, allow_nan=False)
+    json.dumps(verdict, allow_nan=False)
+
+
+@pytest.mark.parametrize("failed_request", [0, 1])
+def test_gate_run_persists_http_errors_and_blocks_candidate(tmp_path, failed_request):
+    data = GATE_CONFIG["data"]
+    paths = (Path(data["d3_prompts"]), Path(data["d5_panel"]))
+    with FakeLlama() as healthy:
+        reference = cli.measure(LlamaServer(f"http://127.0.0.1:{healthy.port}"), 2, 0, *paths)
+    (tmp_path / "reference.json").write_text(json.dumps(reference))
+    cfg = dict(
+        GATE_CONFIG, reference=str(tmp_path / "reference.json"), thresholds=str(tmp_path / "none")
+    )
+    (tmp_path / "gate.yaml").write_text(json.dumps(cfg))
+    measurement, verdict = tmp_path / "measurement.json", tmp_path / "verdict.json"
+    with FakeLlama(errors={failed_request: (400, "context too small")}) as broken:
+        assert (
+            cli.main(
+                [
+                    "run",
+                    "--gate-config",
+                    str(tmp_path / "gate.yaml"),
+                    "--server",
+                    f"http://127.0.0.1:{broken.port}",
+                    "--seed",
+                    "0",
+                    "--budget",
+                    "2",
+                    "--out",
+                    str(verdict),
+                    "--measurement-out",
+                    str(measurement),
+                ]
+            )
+            == 1
+        )
+    m, v = json.loads(measurement.read_text()), json.loads(verdict.read_text())
+    assert m["d5"][-1]["error"]["status_code"] == 400
+    assert v["detectors"]["D5"]["status"] == "error"
+    if failed_request == 0:
+        assert v["detectors"]["D3"]["status"] == v["detectors"]["D6"]["status"] == "error"
+
+
+def test_reference_request_errors_are_never_saved_as_baseline(tmp_path):
+    cfg = dict(
+        GATE_CONFIG, reference_store=dict(GATE_CONFIG["reference_store"], local_root=str(tmp_path))
+    )
+    (tmp_path / "gate.yaml").write_text(json.dumps(cfg))
+    with FakeLlama(errors={1: (400, "context too small")}) as broken:
+        assert (
+            cli.main(
+                [
+                    "reference",
+                    "--gate-config",
+                    str(tmp_path / "gate.yaml"),
+                    "--server",
+                    f"http://127.0.0.1:{broken.port}",
+                    "--seed",
+                    "0",
+                    "--budget",
+                    "2",
+                    "--instance-type",
+                    "local-test",
+                ]
+            )
+            == 2
+        )
+    assert not list(tmp_path.glob("reference/**/measurement.json"))
 
 
 def _check_schema(v):

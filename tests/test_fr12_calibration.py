@@ -236,6 +236,32 @@ def test_matrix_detects_faults_with_d2_only_where_it_ran(tmp_path):
     assert next(csv.reader(out.open())) == matrix.COLUMNS
 
 
+def test_matrix_counts_request_errors_only_in_budgets_that_include_the_error():
+    candidate = measurement(d2=False)
+    candidate["d5"] = candidate["d5"][:70] + [
+        {"id": 70, "error": {"kind": "http", "status_code": 400, "message": "context exceeded"}}
+    ]
+    rules = [{"detector": "D5", "metric": "accuracy_drop", "kind": "upper", "value": 0.0}]
+    rows = matrix.matrix(REFERENCE, {"F7": [candidate]}, {lv: rules for lv in calibrate.LEVELS})
+    cells = {(r["level"], r["detector"]): r for r in rows}
+    assert cells[("L1", "D5")]["detections"] == 0
+    for level in ("L2", "L3"):
+        assert cells[(level, "D5")]["rate"] == 1.0
+        assert cells[(level, "gate")]["detections"] == 1
+
+
+def test_calibration_errors_are_rejected_and_heldout_errors_count_false_alarms():
+    runs = aa_runs()
+    error = {"id": 0, "error": {"kind": "timeout", "status_code": None, "message": "timed out"}}
+    runs[0]["d5"] = [error]
+    with pytest.raises(ValueError, match="cannot calibrate thresholds from detector errors"):
+        calibrate.calibrate(REFERENCE, runs, levels=("L1",))
+    runs = aa_runs()
+    runs[20]["d5"] = [error]
+    result = calibrate.calibrate(REFERENCE, runs, levels=("L1",))
+    assert result["levels"]["L1"]["held_out_false_alarms"]["D5"]["k"] == 1
+
+
 def test_rq2_spearman_with_exact_permutation_p():
     pts = [
         {"name": str(i), "mean_kld": k, "accuracy_drop": d}

@@ -92,7 +92,10 @@ def statistics(reference: dict, candidate: dict, level: str, reported: bool = Fa
         dets = cli.detectors(at_budget(reference, level), at_budget(candidate, level))
         for d, m in wanted:
             if d != "D2":
-                out[(d, m)] = _lookup(dets[d], m)
+                if dets[d].get("status") == "error":
+                    out[(d, "error")] = dets[d]["error"]
+                else:
+                    out[(d, m)] = _lookup(dets[d], m)
     if candidate.get("d2"):
         for d, m in wanted:
             if d == "D2" and m in candidate["d2"]:
@@ -145,12 +148,17 @@ def fired(stats: dict, rules: list[dict], d1_ok: bool | None = None) -> dict[str
     """{detector: fires?}; None when the run has no result for that detector."""
     out: dict[str, bool | None] = {}
     for det, rs in rules_by_detector(rules).items():
-        if all((det, r["metric"]) in stats for r in rs):
+        if (det, "error") in stats:
+            out[det] = True
+        elif all((det, r["metric"]) in stats for r in rs):
             out[det] = any(exceeds(r["kind"], stats[(det, r["metric"])], r["value"]) for r in rs)
         else:
             out[det] = None
     if d1_ok is not None:
         out["D1"] = not d1_ok
+    for det, metric in stats:
+        if metric == "error":
+            out[det] = True
     return out
 
 
@@ -170,6 +178,8 @@ def calibrate(
     for lv in levels:
         stats_cal = [statistics(reference, m, lv, reported=True) for m in cal]
         stats_held = [statistics(reference, m, lv) for m in held]
+        if any(metric == "error" for stats in stats_cal for _, metric in stats):
+            raise ValueError("cannot calibrate thresholds from detector errors")
         rules = []
         for det, metric, kind in STATISTICS:
             value = threshold_value(kind, [s[(det, metric)] for s in stats_cal])

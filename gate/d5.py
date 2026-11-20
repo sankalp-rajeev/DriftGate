@@ -9,7 +9,7 @@ McNemar p-value. No threshold here: the gate threshold comes from A/A calibratio
 
 from __future__ import annotations
 
-from gate.llama_client import LlamaServer, user_prompt
+from gate.llama_client import LlamaServer, RequestError, detector_error, user_prompt
 from gate.prompts import mmlu_prompt
 from gate.stats import mcnemar_exact, mean, paired_bootstrap_ci
 
@@ -20,13 +20,17 @@ BOOTSTRAP_SEED = 0
 def measure(server: LlamaServer, items: list[dict], seed: int) -> list[dict]:
     out = []
     for item in items:
-        resp = server.completion(
-            user_prompt(server, mmlu_prompt(item)),
-            n_predict=1,
-            temperature=0,
-            seed=seed,
-            cache_prompt=False,
-        )
+        try:
+            resp = server.completion(
+                user_prompt(server, mmlu_prompt(item)),
+                n_predict=1,
+                temperature=0,
+                seed=seed,
+                cache_prompt=False,
+            )
+        except RequestError as e:
+            out.append({"id": item["id"], "error": e.details})
+            break
         predicted = resp["content"].strip()
         out.append(
             {"id": item["id"], "predicted": predicted, "correct": predicted == item["answer"]}
@@ -35,6 +39,8 @@ def measure(server: LlamaServer, items: list[dict], seed: int) -> list[dict]:
 
 
 def metrics(reference: list[dict], candidate: list[dict]) -> dict:
+    if error := detector_error(candidate):
+        return error
     ref_by_id = {r["id"]: r for r in reference}
     ids = [c["id"] for c in candidate]
     ref = [int(ref_by_id[i]["correct"]) for i in ids]
