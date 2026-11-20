@@ -1,0 +1,9 @@
+point,mean_kld,accuracy_drop,series
+Q8_0,0,0.0,weight quantization
+Q6_K,0.011648,0.01953125,weight quantization
+Q5_K_M,0.018485,0.11328125,weight quantization
+Q4_K_M,0.045393,0.08984375,weight quantization
+Q3_K_M,0.120726,0.2421875,weight quantization
+Q2_K,0.54954,0.26171875,weight quantization
+F3 (original),0,0.578125,KV flags omitted
+F3 (flagged),5.337437,0.578125,exploratory
