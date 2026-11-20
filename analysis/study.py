@@ -158,6 +158,40 @@ def study_dir(root: Path = Path("runs"), today: dt.date | None = None) -> Path:
     return root / f"{(today or dt.date.today()).isoformat()}-study"
 
 
+def study_started_at(out: Path) -> dt.datetime:
+    """The original, possibly pre-timezone-log, timing start rather than a resume time."""
+    with (out / "study.log").open() as log:
+        for line in log:
+            timestamp, _, event = line.strip().partition(" ")
+            if event == "start timing":
+                return dt.datetime.fromisoformat(timestamp).astimezone(dt.UTC)
+    raise ValueError("study.log has no original timing start")
+
+
+def select_f8_tag(src: Path, cutoff: dt.datetime) -> dict[str, str]:
+    """Select the most recent numbered build tag, using Git's creator timestamp."""
+    if cutoff.utcoffset() is None:
+        raise ValueError("F8 cutoff needs a timezone")
+    rows = git(
+        "-C",
+        str(src),
+        "for-each-ref",
+        "--sort=-version:refname",
+        "--sort=-creatordate",
+        "--format=%(refname:short) %(creatordate:iso-strict)",
+        "refs/tags/b*",
+    )
+    for row in rows.splitlines():
+        tag, _, stamp = row.partition(" ")
+        if not re.fullmatch(r"b[0-9]+", tag):
+            continue
+        date = dt.datetime.fromisoformat(stamp).astimezone(dt.UTC)
+        if date <= cutoff:
+            commit = git("-C", str(src), "rev-parse", f"refs/tags/{tag}^{{commit}}")
+            return {"tag": tag, "commit": commit, "date": date.isoformat()}
+    raise ValueError(f"no numbered llama.cpp release tag at or before {cutoff.isoformat()}")
+
+
 def run_complete(
     path: Path,
     *,
@@ -299,7 +333,7 @@ class Study:
         (out / "logs").mkdir(parents=True, exist_ok=True)
 
     def log(self, msg: str) -> None:
-        line = f"{dt.datetime.now().isoformat(timespec='seconds')} {msg}"
+        line = f"{dt.datetime.now().astimezone().isoformat(timespec='seconds')} {msg}"
         with (self.out / "study.log").open("a") as f:
             f.write(line + "\n")
             f.flush()
@@ -358,16 +392,21 @@ class Study:
             self.sh(name, cmd, env() if callable(env) else env)
 
         seed = int(extra[extra.index("--run-seed") + 1]) if "--run-seed" in extra else i
-        return Unit(
-            name,
-            lambda: run_complete(
-                out / f"run-{i:02d}.json",
+        record = out / f"run-{i:02d}.json"
+
+        def done():
+            return run_complete(
+                record,
                 require_d1="--d1" in extra,
                 require_d2="--d2" in extra,
                 d5_only="--d5-only" in extra,
                 fault=fault or (bundle.name if isinstance(bundle, Path) else None),
                 run_seed=seed,
-            ),
+            ) and (fault != "F8" or self.f8_run_matches(record))
+
+        return Unit(
+            name,
+            done,
             run,
             True,
         )
@@ -411,7 +450,7 @@ class Study:
                 bundle = (
                     (lambda fault=fault: self.bundle(fault))
                     if fault != "F8"
-                    else Path("artifacts/bundles/F8")
+                    else self.out / "bundles/F8"
                 )
                 extra = ["--d1", "--run-seed", str(k + 1)] + (
                     ["--d2"] if fault in D2_FAULTS else []
@@ -475,47 +514,96 @@ class Study:
             raise ValueError(f"invalid repetition count {count!r}")
         return count
 
-    def f8_env(self) -> dict:
+    def f8_info(self) -> dict:
         info = json.loads((self.out / "f8.json").read_text())
+        date = dt.datetime.fromisoformat(info["date"])
+        start = dt.datetime.fromisoformat(info["study_start"])
+        if (
+            not re.fullmatch(r"b[0-9]+", info["tag"])
+            or date.utcoffset() is None
+            or start.utcoffset() is None
+            or date > start
+            or not re.fullmatch(r"[0-9a-f]{40}", info["commit"])
+        ):
+            raise ValueError("invalid F8 build metadata")
+        return info
+
+    def f8_env(self) -> dict:
+        info = self.f8_info()
         return {**self.env, "LLAMA_CPP_BIN": info["bin_dir"]}
 
-    def f8_unit(self) -> Unit:
+    def f8_run_matches(self, record: Path) -> bool:
+        from gate.serve import engine_matches, version_commit
+
+        try:
+            info = self.f8_info()
+            binary = json.loads(record.read_text())["server_binary"]
+            commit = version_commit(binary["version"])
+            return (
+                engine_matches(info, commit)
+                and commit == binary["commit"]
+                and binary["build_info"].endswith(f"-{commit}")
+                and binary["build_info"] != binary["baseline_build_info"]
+            )
+        except (OSError, ValueError, KeyError, TypeError):
+            return False
+
+    def f8_unit(self, cutoff: dt.datetime | None = None) -> Unit:
+        def done():
+            try:
+                info = self.f8_info()
+                if cutoff is not None and dt.datetime.fromisoformat(info["study_start"]) != cutoff:
+                    return False
+                lock = load_yaml(self.out / "bundles/F8/serving/llama_cpp.lock")
+                return info["commit"] == lock["commit"] and all(
+                    (Path(info["bin_dir"]) / name).is_file()
+                    for name in ("llama-server", "llama-perplexity")
+                )
+            except (OSError, ValueError, KeyError, TypeError, yaml.YAMLError):
+                return False
+
         def run():
             src = Path(os.environ.get("DRIFTGATE_LLAMA_CPP_DIR", "~/llama.cpp")).expanduser()
-            work = src.with_name(src.name + "-f8")
-            tag = subprocess.run(
-                ["gh", "api", "repos/ggml-org/llama.cpp/releases/latest", "-q", ".tag_name"],
-                capture_output=True, text=True, check=True,
-            ).stdout.strip()  # fmt: skip
-            self.log(f"F8 tag: {tag}")
             git("-C", str(src), "fetch", "--quiet", "--tags", "origin")
-            commit = git("-C", str(src), "rev-list", "-n", "1", tag)
+            start = cutoff or study_started_at(self.out)
+            selected = select_f8_tag(src, start)
+            tag, commit = selected["tag"], selected["commit"]
+            self.log(f"F8 tag: {tag} ({commit}, {selected['date']})")
+            work = Path("artifacts/llama.cpp-f8").resolve() / tag
             if not work.exists():
-                git("-C", str(src), "worktree", "add", "--detach", str(work), commit)
+                work.parent.mkdir(parents=True, exist_ok=True)
+                git("clone", "--shared", "--no-checkout", str(src), str(work))
+                git("-C", str(work), "checkout", "--detach", commit)
+            if git("-C", str(work), "rev-parse", "HEAD") != commit:
+                raise ValueError(f"{work} does not contain the selected F8 commit {commit}")
             self.sh("f8-cmake", ["cmake", "-S", str(work), "-B", str(work / "build"),
-                                 "-DCMAKE_BUILD_TYPE=Release", "-DLLAMA_CURL=OFF"])  # fmt: skip
-            self.sh("f8-build", ["cmake", "--build", str(work / "build"), "-j", str(os.cpu_count()),
+                                 "-DCMAKE_BUILD_TYPE=Release", "-DLLAMA_CURL=OFF",
+                                 "-DLLAMA_USE_PREBUILT_UI=OFF"])  # fmt: skip
+            self.sh("f8-build", ["cmake", "--build", str(work / "build"), "-j",
+                                 str(min(os.cpu_count() or 1, 12)),
                                  "--target", "llama-server", "llama-perplexity"])  # fmt: skip
             bundle = self.bundle("AA")
-            f8 = Path("artifacts/bundles/F8")
+            f8 = self.out / "bundles/F8"
             if f8.exists():
                 shutil.rmtree(f8)
-            shutil.copytree(bundle, f8)
+            shutil.copytree(bundle, f8, ignore=shutil.ignore_patterns("server.log"))
             lock = f8 / "serving/llama_cpp.lock"
-            lines = [
-                f"commit: {commit}" if x.startswith("commit:") else x
-                for x in lock.read_text().splitlines()
-            ]
-            lock.write_text("\n".join(lines) + "\n")
+            lock.write_text(
+                yaml.safe_dump(
+                    {"repo": load_yaml(lock)["repo"], "commit": commit, "describe": tag},
+                    sort_keys=False,
+                )
+            )
             meta = json.loads((f8 / "bundle.json").read_text())
             text = f"llama.cpp build bump to release {tag} ({commit})"
             meta |= {"fault": "F8", "layer": "engine", "description": text}
+            meta["files"]["serving/llama_cpp.lock"] = sha256(lock)
             (f8 / "bundle.json").write_text(json.dumps(meta, indent=2) + "\n")
             bin_dir = str(work / "build/bin")
-            info = {"tag": tag, "commit": commit, "bin_dir": bin_dir}
+            info = {**selected, "study_start": start.isoformat(), "bin_dir": bin_dir}
             (self.out / "f8.json").write_text(json.dumps(info, indent=2) + "\n")
 
-        return Unit("f8-record-and-build", lambda: (self.out / "f8.json").exists(), run)
+        return Unit("f8-record-and-build", done, run, validate=True)
 
     def analysis_unit(self) -> Unit:
         def run():

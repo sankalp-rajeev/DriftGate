@@ -57,13 +57,22 @@ def build_argv(config: dict, models_dir: Path, bin_dir: Path) -> list[str]:
     return argv
 
 
-def binary_commit(bin_dir: Path) -> str | None:
-    """Short commit hash reported by `llama-server --version`, or None if not found."""
+def binary_version(bin_dir: Path) -> str:
+    """Version text from the same llama-server executable the launcher will use."""
     out = subprocess.run(
         [str(bin_dir / "llama-server"), "--version"], capture_output=True, text=True, check=False
     )
-    m = re.search(r"commit ([0-9a-f]+)", out.stdout + out.stderr)
+    return (out.stdout + out.stderr).strip()
+
+
+def version_commit(version: str) -> str | None:
+    m = re.search(r"commit ([0-9a-f]+)", version)
     return m.group(1) if m else None
+
+
+def binary_commit(bin_dir: Path) -> str | None:
+    """Short commit hash reported by `llama-server --version`, or None if not found."""
+    return version_commit(binary_version(bin_dir))
 
 
 def engine_matches(lock: dict, commit: str | None) -> bool:
