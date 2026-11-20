@@ -471,8 +471,8 @@ Rebased on Wednesday 18 November 2026. Thanksgiving (26 Nov) is a planned day of
 
 | Task | FR | Mode | Due | Phase | Status |
 | --- | --- | --- | --- | --- | --- |
-| T-01 Lab day-one probes (Section 14) | NFR | Human | 17 Nov | P1 | Done (CodeDeploy with LabRole still open, T-01b) |
-| T-01b CodeDeploy probe: app and EC2 group with LabRole as service role, ALB, one alarm | FR-17, FR-19 | Human | 19 Nov | P1 | To do |
+| T-01 Lab day-one probes (Section 14) | NFR | Human | 17 Nov | P1 | Done (CodeDeploy with LabRole confirmed in T-01b) |
+| T-01b CodeDeploy probe: app and EC2 group with LabRole as service role, ALB, one alarm | FR-17, FR-19 | Human | 19 Nov | P1 | LabRole and S3 ZIP deploy passed ([#2](https://github.com/sankalp-rajeev/DriftGate/issues/2)). ALB and rollback validation remain open (Section 14.2) |
 | T-02 Agent setup: `AGENTS.md`, skills, permissions, issue tracker | All | Human | 18 Nov | P1 | Done (PR #1) |
 | T-03 Repo skeleton, ADR-001 to ADR-010 from Section 8, architecture doc (spec: `docs/agents/T-03.md`) | All | Agent | 19 Nov | P2 | To do |
 | T-04 Local llama-server with manifest and hashes | FR-01, FR-02 | Agent | 20 Nov | P3 | Partial (smoke test 17 Nov) |
@@ -540,13 +540,14 @@ From course materials that quote Lab restriction notes (not AWS docs): us-east-1
 | Lambda with LabRole as execution role | Works; writes CloudWatch Logs | 17 Nov |
 | EC2 with LabInstanceProfile registers with Systems Manager; Run Command `AWS-RunShellScript` | Works | 17 Nov |
 | CodeDeploy console | Opens | 17 Nov |
+| CodeDeploy EC2 deployment with LabRole (T-01b) | Passed: created a deployment group with `LabRole` as the service role and deployed an S3 `.zip` revision to an EC2 instance with `LabInstanceProfile`. Deployment `d-IBULITHXM` finished `Succeeded`. [Evidence](docs/lab-constraints-evidence.md#codedeploy-deployment-with-labrole) | 20 Nov (reported) |
 | CodePipeline console | Opens (pipeline cannot run) | 17 Nov |
 | Cost Explorer | Works; per-service data visible, about a day behind | 17 Nov |
 | Local llama-server in WSL (Qwen2.5-0.5B Q4_K_M, CPU) | Works; about 90 to 100 tokens/s generation on the laptop | 17 Nov |
 
 Remaining probes:
 
-- [ ] CodeDeploy app and EC2 group with LabRole as service role, ALB, rollback, one alarm (T-01b; highest risk)
+- [ ] CodeDeploy ALB deregistration and re-registration, plus rollback on lifecycle-hook failure or a CloudWatch alarm (FR-17, FR-19)
 - [ ] t3.large with LabInstanceProfile, CodeDeploy agent, reaches S3 and Hugging Face
 - [ ] PutMetricData from instance, alarm on it
 - [ ] SNS email subscription and Lambda function URL
