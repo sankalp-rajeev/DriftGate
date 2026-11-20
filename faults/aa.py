@@ -20,7 +20,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from gate import cli, d1, d2
+from gate import cli, d1, d2, serve
 from gate import reference as ref_store
 from gate.llama_client import LlamaServer
 from gate.manifest import load_yaml
@@ -97,6 +97,15 @@ def run(args) -> list[Path]:
     args.out.mkdir(parents=True, exist_ok=True)
     written = []
     for i in range(args.start, args.start + args.runs):
+        server_binary = None
+        if bundle_meta["fault"] == "F8":
+            bin_dir = serve.llama_bin_dir()
+            version = serve.binary_version(bin_dir)
+            commit = serve.version_commit(version)
+            lock = load_yaml(args.bundle / bundle_config["llama_cpp_lock"])
+            if not serve.engine_matches(lock, commit):
+                raise ValueError(f"F8 executable version does not match the bundle lock: {version}")
+            server_binary = {"version": version, "commit": commit}
         t0 = time.monotonic()
         proc, base = start_server(args.bundle, args.models_dir)
         startup_s = time.monotonic() - t0
@@ -113,6 +122,19 @@ def run(args) -> list[Path]:
             )
         finally:
             stop_server(proc)
+        if server_binary:
+            build_info = m["server"]["build_info"]
+            baseline_build = reference["server"]["build_info"]
+            if (
+                not build_info
+                or not build_info.endswith(f"-{commit}")
+                or build_info == baseline_build
+            ):
+                raise ValueError(
+                    f"F8 server reports {build_info!r}, expected commit {commit} "
+                    f"and a build distinct from {baseline_build!r}"
+                )
+            server_binary.update(build_info=build_info, baseline_build_info=baseline_build)
         (args.out / f"run-{i:02d}.measurement.json").write_text(json.dumps(m) + "\n")
         seconds = {"startup": startup_s, **m.get("wall_clock_s", {})}
         if args.d2:  # llama-perplexity against the baseline's stored logits (server is stopped)
@@ -142,6 +164,8 @@ def run(args) -> list[Path]:
             "seconds": seconds,
             "verdict": verdict,
         }
+        if server_binary:
+            record["server_binary"] = server_binary
         path = args.out / f"run-{i:02d}.json"
         path.write_text(json.dumps(record, indent=2) + "\n")
         written.append(path)

@@ -16,6 +16,87 @@ from gate.reference import load_baseline
 BASELINE = load_baseline()
 
 
+@pytest.fixture
+def tagged_repo(tmp_path):
+    repo = tmp_path / "upstream"
+    repo.mkdir()
+    study.git("-C", str(repo), "init", "--quiet")
+    for tag, date, annotation in (
+        ("b12560", "2026-11-20T03:00:00+00:00", None),
+        ("b12558", "2026-11-19T22:00:00+00:00", None),
+        ("b12557", "2026-11-19T23:21:24+01:00", None),
+        ("b12556", "2026-11-19T20:00:00+00:00", "2026-11-20T02:30:00+00:00"),
+        ("v1.0.0", "2026-11-20T02:00:00+00:00", None),
+        ("b12561-preview", "2026-11-20T01:00:00+00:00", None),
+    ):
+        cmd = ["git", "-C", str(repo), "-c", "user.name=Test", "-c", "user.email=test@example.org"]
+        subprocess.run(
+            [*cmd, "commit", "--quiet", "--allow-empty", "--date", date, "-m", tag],
+            env={"GIT_COMMITTER_DATE": date},
+            check=True,
+        )
+        args = ["-m", tag] if annotation else []
+        subprocess.run(
+            [*cmd, "tag", *args, tag], env={"GIT_COMMITTER_DATE": annotation or date}, check=True
+        )
+    return repo
+
+
+def test_f8_uses_newest_numbered_tag_created_by_study_start(tagged_repo):
+    cutoff = dt.datetime.fromisoformat("2026-11-19T21:29:00-05:00")
+    assert study.select_f8_tag(tagged_repo, cutoff) == {
+        "tag": "b12557",
+        "commit": study.git("-C", str(tagged_repo), "rev-parse", "b12557^{commit}"),
+        "date": "2026-11-19T22:21:24+00:00",
+    }
+
+
+def test_f8_does_not_fall_back_to_an_ineligible_release(tagged_repo):
+    with pytest.raises(ValueError, match="no numbered llama.cpp release tag"):
+        study.select_f8_tag(tagged_repo, dt.datetime(2026, 11, 19, 19, tzinfo=dt.UTC))
+
+
+def test_study_resume_uses_original_timing_start(tmp_path):
+    (tmp_path / "study.log").write_text(
+        "2026-11-19T21:29:45-05:00 start timing\n2026-11-20T11:00:00-05:00 start F7-1\n"
+    )
+    assert study.study_started_at(tmp_path) == dt.datetime.fromisoformat(
+        "2026-11-20T02:29:45+00:00"
+    )
+
+
+def test_f8_resume_requires_candidate_version_to_match_the_selected_commit(tmp_path):
+    runner = study.Study(tmp_path)
+    (tmp_path / "f8.json").write_text(
+        json.dumps(
+            {
+                "tag": "b12557",
+                "commit": "b94959a64d011915d77a5381c7d4846dcda99530",
+                "date": "2026-11-19T22:21:24+00:00",
+                "study_start": "2026-11-19T21:29:00-05:00",
+            }
+        )
+    )
+    record = tmp_path / "run-00.json"
+    record.write_text("{}")
+    assert not runner.f8_run_matches(record)
+    binary = {
+        "version": "version: 1.0.0-dev (build 12359, commit b1b770d90)",
+        "commit": "b1b770d90",
+        "build_info": "b12359-b1b770d90",
+        "baseline_build_info": "b12491-8c16babba",
+    }
+    record.write_text(json.dumps({"server_binary": binary}))
+    assert not runner.f8_run_matches(record)
+    binary.update(
+        version="version: 1.0.0-dev (build 12557, commit b94959a64)",
+        commit="b94959a64",
+        build_info="b12557-b94959a64",
+    )
+    record.write_text(json.dumps({"server_binary": binary}))
+    assert runner.f8_run_matches(record)
+
+
 class FakeGit:
     """Stands in for subprocess.run for git: `log` result, `show` text and ancestor result."""
 
