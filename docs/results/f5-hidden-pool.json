@@ -1,0 +1,119 @@
+{
+  "schema": "driftgate.fr14-result/1",
+  "study_checkout_commit": "a9ff1b206ddbf058799e76383a27b594a0787200",
+  "llama_cpp_commit": "8c16babba5d4c66e28a19d86e572e4b04f522d52",
+  "instance_type": "local-Sankalps-Razer",
+  "model_sha256": "d7efb072e7724d25048a4fda0a3e10b04bdef5d06b1403a1c93bd9f1240a63c8",
+  "base_config_hash": "5c1277b1db8a99d27b529ae10370372e4da22ad6134478f18dcd8aae19d75d49",
+  "bundle_file_sha256": {
+    "AA": {
+      "serving/config.yaml": "5bfae19f9ce7a8e59f49bdae1ab993460cdd1711e6584a2af89434810a35d568",
+      "serving/llama_cpp.lock": "8ff1a583dfffdae21a681e302b156de91edacb689cb3d4cf32345b2af03e98ff",
+      "serving/manifest.json": "973c3064998a18eaef8e26e80b30aeb732e4d794943d1262765ac22ff340d8cb",
+      "serving/models.yaml": "3c1f34aec3c9cdb7b91790767de7af47df11c5bf0c9aec2404c36024e91faede",
+      "serving/templates/qwen2.5-instruct.jinja": "d5495a1e5db0611132a97e46a65dbb64a642a499421228b9c8b93229097fa9a4"
+    },
+    "F5": {
+      "serving/config.yaml": "5bfae19f9ce7a8e59f49bdae1ab993460cdd1711e6584a2af89434810a35d568",
+      "serving/llama_cpp.lock": "8ff1a583dfffdae21a681e302b156de91edacb689cb3d4cf32345b2af03e98ff",
+      "serving/manifest.json": "973c3064998a18eaef8e26e80b30aeb732e4d794943d1262765ac22ff340d8cb",
+      "serving/models.yaml": "3c1f34aec3c9cdb7b91790767de7af47df11c5bf0c9aec2404c36024e91faede",
+      "serving/templates/qwen2.5-instruct.jinja": "bae63ab3bb5b6fd0e8474e2a903882459aec2a22c1b074de5da9a12f0d51009a"
+    }
+  },
+  "hidden_pool_sha256": "e35e2d50ed8a34346f42d8caf9aab8b963983dcb78712317185b60166049b4c5",
+  "measurement_seed": 0,
+  "seeded_sampler": "random.Random(run_seed).sample(pool, 64), frozen JSONL file order",
+  "level": "L1",
+  "items_per_run": 64,
+  "thresholds_sha256": "62801ec4824893f3ed870e27abb3adc1e873058bde4ba70fe049f5467a945fa0",
+  "runs": [
+    {
+      "run_seed": 1,
+      "sample_ids_sha256": "72aeb06d4f428a2b2296bfa751362a8016a4902bff3895fbdb31a9ac2f372e96",
+      "reference_measurement_sha256": "36dce90ee040c4d8954ce80eaa3a454c0383aa23149dc80037447b7d78b9d5b1",
+      "f5_measurement_sha256": "36dce90ee040c4d8954ce80eaa3a454c0383aa23149dc80037447b7d78b9d5b1",
+      "reference_correct": 39,
+      "f5_correct": 39,
+      "identical_responses": 64,
+      "metrics": {
+        "n_items": 64,
+        "reference_accuracy": 0.609375,
+        "candidate_accuracy": 0.609375,
+        "delta_accuracy": 0.0,
+        "accuracy_drop": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ],
+        "bootstrap": {
+          "resamples": 10000,
+          "seed": 0,
+          "method": "percentile"
+        },
+        "mcnemar": {
+          "b_reference_only": 0,
+          "c_candidate_only": 0,
+          "p_value": 1.0
+        }
+      },
+      "rule_result": {
+        "detector": "D5",
+        "metric": "accuracy_drop",
+        "kind": "upper",
+        "value": 0.0,
+        "observed": 0.0,
+        "score": 0.0,
+        "ok": true
+      },
+      "detected": false
+    },
+    {
+      "run_seed": 2,
+      "sample_ids_sha256": "1dd9c73de6ee573e7b4816143c5856e3cb087f14f2a67344b9a42b6efacb47fb",
+      "reference_measurement_sha256": "44567f80f892d8f2a094e98eadb4c27e888c83c4bb403de4876a45515037cc37",
+      "f5_measurement_sha256": "44567f80f892d8f2a094e98eadb4c27e888c83c4bb403de4876a45515037cc37",
+      "reference_correct": 38,
+      "f5_correct": 38,
+      "identical_responses": 64,
+      "metrics": {
+        "n_items": 64,
+        "reference_accuracy": 0.59375,
+        "candidate_accuracy": 0.59375,
+        "delta_accuracy": 0.0,
+        "accuracy_drop": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ],
+        "bootstrap": {
+          "resamples": 10000,
+          "seed": 0,
+          "method": "percentile"
+        },
+        "mcnemar": {
+          "b_reference_only": 0,
+          "c_candidate_only": 0,
+          "p_value": 1.0
+        }
+      },
+      "rule_result": {
+        "detector": "D5",
+        "metric": "accuracy_drop",
+        "kind": "upper",
+        "value": 0.0,
+        "observed": 0.0,
+        "score": 0.0,
+        "ok": true
+      },
+      "detected": false
+    }
+  ],
+  "detections": 0,
+  "n": 2,
+  "rate": 0.0,
+  "ci95": [
+    0.0,
+    0.841886116991581
+  ]
+}
