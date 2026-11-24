@@ -28,11 +28,22 @@ Before the first pipeline smoke run, prepare the reference on the approved basel
 revision on the t3.large build host. From `/opt/driftgate`, export
 `LLAMA_CPP_BIN=/opt/llama.cpp/build/bin` and use
 `uv run python -m gate reference --print-key` to find the baseline's S3 key and
-local directory. Generate `d2_base.kld` with `uv run python -m gate.d2 base`. With
-`make serve` running on the same host, run `uv run python -m gate reference --seed 0`
-to generate `measurement.json`. Copy both files to the S3 reference key with
-`aws s3 cp --sse AES256`. In subsequent sessions, restore the pinned D2 logits to the
-build host's local reference directory before a build. The serving hooks fetch the
+local directory. Generate `d2_base.kld` with `uv run python -m gate.d2 base`.
+
+Start manual long jobs on instances with `systemd-run`. Under SSM, never use
+`nohup` to detach them. With `make serve` running on the same host, start the
+reference measurement as a systemd service. The t3.large default covers L1.
+
+```sh
+sudo systemd-run --unit=driftgate-reference --working-directory=/opt/driftgate \
+  --setenv=LLAMA_CPP_BIN=/opt/llama.cpp/build/bin \
+  /usr/local/bin/uv run python -m gate reference --seed 0
+sudo journalctl -u driftgate-reference --no-pager
+```
+
+When the job completes, copy `measurement.json` and `d2_base.kld` to the S3 reference key
+with `aws s3 cp --sse AES256`. In subsequent sessions, restore the pinned D2 logits to
+the build host's local reference directory before a build. The serving hooks fetch the
 reference from S3.
 
 The gate records verdicts in report mode until the t3.large calibration in Phase 2.

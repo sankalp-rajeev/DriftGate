@@ -8,6 +8,7 @@
     "host_tag": {"key": "Role", "value": "build-host"},
     "host_idle_stop_seconds": 1800,
     "document": "AWS-RunShellScript",
+    "execution_timeout_seconds": 7200,
     "working_directory": "/opt/driftgate",
     "commands": [
       "cd {working_directory} && git fetch && git checkout {commit_id} && deploy/build.sh --commit {commit_id} --run-id {run_id}"

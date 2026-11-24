@@ -45,6 +45,7 @@ def test_missing_reference_runs_gate_reference_first(pipeline, orc):
     out = orc.handle(push_event())
     assert out["build"]["action"] == "reference_started"
     [cmd] = commands()
+    assert cmd["Parameters"]["executionTimeout"] == ["7200"]
     script = "\n".join(cmd["Parameters"]["commands"])
     assert f"--reference-key {KEY}" in script
     assert "git checkout reference" in script
@@ -57,6 +58,9 @@ def test_missing_reference_runs_gate_reference_first(pipeline, orc):
 
 
 def test_reference_success_then_build_runs(pipeline, orc):
+    orc.cfg = dataclasses.replace(
+        orc.cfg, build=dataclasses.replace(orc.cfg.build, execution_timeout_seconds=5400)
+    )
     run_id = orc.handle(push_event())["run_id"]
     ref_cmd = details(pipeline, run_id)["reference"]["command_id"]
     pipeline["clock"].advance(900)
@@ -65,8 +69,10 @@ def test_reference_success_then_build_runs(pipeline, orc):
     d = details(pipeline, run_id)
     assert d["reference"]["status"] == "succeeded"
     assert d["reference"]["ended_at"] == "2026-11-24T12:15:00+00:00"
-    assert len(commands()) == 2
-    assert any("deploy/build.sh" in c for x in commands() for c in x["Parameters"]["commands"])
+    sent = commands()
+    assert len(sent) == 2
+    assert all(cmd["Parameters"]["executionTimeout"] == ["5400"] for cmd in sent)
+    assert any("deploy/build.sh" in c for x in sent for c in x["Parameters"]["commands"])
     # The repeat of the reference event changes nothing.
     assert orc.handle(ssm_event(ref_cmd, "Success"))["action"] == "ignored"
 
