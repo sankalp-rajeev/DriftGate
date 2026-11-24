@@ -153,9 +153,13 @@ def test_orchestrator_invocable_only_by_eventbridge_rules():
 
 
 def test_approval_handler_invocable_only_via_function_url():
-    (s,) = statements(IAM / "lambda-resource-approval-url.json")
-    assert s["Action"] == "lambda:InvokeFunctionUrl"
-    assert "lambda:FunctionUrlAuthType" in s["Condition"]["StringEquals"]
+    conditions = {
+        s["Action"]: s["Condition"] for s in statements(IAM / "lambda-resource-approval-url.json")
+    }
+    assert conditions == {
+        "lambda:InvokeFunctionUrl": {"StringEquals": {"lambda:FunctionUrlAuthType": "NONE"}},
+        "lambda:InvokeFunction": {"Bool": {"lambda:InvokedViaFunctionUrl": "true"}},
+    }
 
 
 def test_build_host_send_command_scoped_by_tag():

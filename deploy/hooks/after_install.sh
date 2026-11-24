@@ -7,18 +7,7 @@ cd "$DRIFTGATE_APP_DIR"
 uv sync --frozen --no-dev
 log "python environment synced"
 
-# llama.cpp at the serving/llama_cpp.lock commit; rebuilt only when the lock changes (F8).
-lock_commit="$("$PY" -c 'import sys, yaml; print(yaml.safe_load(open(sys.argv[1]))["commit"])' serving/llama_cpp.lock)"
-built="$("$LLAMA_CPP_BIN/llama-server" --version 2>&1 | sed -n 's/.*commit \([0-9a-f]*\).*/\1/p' | head -n1 || true)"
-if [ -z "$built" ] || [ "${lock_commit#"$built"}" = "$lock_commit" ]; then
-  log "building llama.cpp $lock_commit (installed: ${built:-none})"
-  repo="$("$PY" -c 'import sys, yaml; print(yaml.safe_load(open(sys.argv[1]))["repo"])' serving/llama_cpp.lock)"
-  [ -d "$DRIFTGATE_LLAMA_CPP_DIR/.git" ] || git clone --quiet "$repo" "$DRIFTGATE_LLAMA_CPP_DIR"
-  git -C "$DRIFTGATE_LLAMA_CPP_DIR" fetch --quiet origin
-  git -C "$DRIFTGATE_LLAMA_CPP_DIR" checkout --quiet --detach "$lock_commit"
-  cmake -S "$DRIFTGATE_LLAMA_CPP_DIR" -B "$DRIFTGATE_LLAMA_CPP_DIR/build" -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF
-  cmake --build "$DRIFTGATE_LLAMA_CPP_DIR/build" -j "$(nproc)" --target llama-server
-fi
+ensure_llama_cpp llama-server
 
 # The model named by the serving config, downloaded if missing and checked against the manifest.
 role="$("$PY" - "$DRIFTGATE_SERVING_CONFIG" <<'PYEOF'

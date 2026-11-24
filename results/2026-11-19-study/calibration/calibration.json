@@ -1,0 +1,349 @@
+{
+  "n_calibration": 20,
+  "n_held_out": 10,
+  "levels": {
+    "L1": {
+      "d3_prompts": 16,
+      "d5_items": 64,
+      "rules": [
+        {
+          "detector": "D2",
+          "metric": "mean_kld",
+          "kind": "upper",
+          "value": -0.0
+        },
+        {
+          "detector": "D3",
+          "metric": "mean_agreement_share",
+          "kind": "agreement",
+          "value": 1.0
+        },
+        {
+          "detector": "D5",
+          "metric": "accuracy_drop",
+          "kind": "upper",
+          "value": 0.0
+        },
+        {
+          "detector": "D6",
+          "metric": "ratio.p95_itl_ms",
+          "kind": "upper",
+          "value": 1.3720862440822872
+        }
+      ],
+      "reported_aa_range": {
+        "D2.p99_kld": {
+          "min": 3.3e-05,
+          "max": 3.3e-05
+        },
+        "D2.same_top_p_pct": {
+          "min": 100.0,
+          "max": 100.0
+        },
+        "D3.mean_approx_kl": {
+          "min": 0.0,
+          "max": 0.0
+        },
+        "D3.p95_approx_kl": {
+          "min": 0.0,
+          "max": 0.0
+        },
+        "D5.delta_accuracy": {
+          "min": 0.0,
+          "max": 0.0
+        },
+        "D6.ratio.p95_ttft_ms": {
+          "min": 0.62701878884576,
+          "max": 1.2947697632145039
+        }
+      },
+      "held_out_false_alarms": {
+        "D2": {
+          "k": 0,
+          "n": 10,
+          "rate": 0.0,
+          "ci95": [
+            0.0,
+            0.3084971078187607
+          ]
+        },
+        "D3": {
+          "k": 0,
+          "n": 10,
+          "rate": 0.0,
+          "ci95": [
+            0.0,
+            0.3084971078187607
+          ]
+        },
+        "D5": {
+          "k": 0,
+          "n": 10,
+          "rate": 0.0,
+          "ci95": [
+            0.0,
+            0.3084971078187607
+          ]
+        },
+        "D6": {
+          "k": 0,
+          "n": 10,
+          "rate": 0.0,
+          "ci95": [
+            0.0,
+            0.3084971078187607
+          ]
+        },
+        "gate": {
+          "k": 0,
+          "n": 10,
+          "rate": 0.0,
+          "ci95": [
+            0.0,
+            0.3084971078187607
+          ]
+        },
+        "D1": {
+          "k": 0,
+          "n": 10,
+          "rate": 0.0,
+          "ci95": [
+            0.0,
+            0.3084971078187607
+          ]
+        }
+      },
+      "per_detector_bound": 0.047619047619047616,
+      "gate_bound": null
+    },
+    "L2": {
+      "d3_prompts": 32,
+      "d5_items": 128,
+      "rules": [
+        {
+          "detector": "D2",
+          "metric": "mean_kld",
+          "kind": "upper",
+          "value": -0.0
+        },
+        {
+          "detector": "D3",
+          "metric": "mean_agreement_share",
+          "kind": "agreement",
+          "value": 1.0
+        },
+        {
+          "detector": "D5",
+          "metric": "accuracy_drop",
+          "kind": "upper",
+          "value": 0.0
+        },
+        {
+          "detector": "D6",
+          "metric": "ratio.p95_itl_ms",
+          "kind": "upper",
+          "value": 1.1914744913216546
+        }
+      ],
+      "reported_aa_range": {
+        "D2.p99_kld": {
+          "min": 3.3e-05,
+          "max": 3.3e-05
+        },
+        "D2.same_top_p_pct": {
+          "min": 100.0,
+          "max": 100.0
+        },
+        "D3.mean_approx_kl": {
+          "min": 0.0,
+          "max": 0.0
+        },
+        "D3.p95_approx_kl": {
+          "min": 0.0,
+          "max": 0.0
+        },
+        "D5.delta_accuracy": {
+          "min": 0.0,
+          "max": 0.0
+        },
+        "D6.ratio.p95_ttft_ms": {
+          "min": 0.603401578208824,
+          "max": 1.293395557324958
+        }
+      },
+      "held_out_false_alarms": {
+        "D2": {
+          "k": 0,
+          "n": 10,
+          "rate": 0.0,
+          "ci95": [
+            0.0,
+            0.3084971078187607
+          ]
+        },
+        "D3": {
+          "k": 0,
+          "n": 10,
+          "rate": 0.0,
+          "ci95": [
+            0.0,
+            0.3084971078187607
+          ]
+        },
+        "D5": {
+          "k": 0,
+          "n": 10,
+          "rate": 0.0,
+          "ci95": [
+            0.0,
+            0.3084971078187607
+          ]
+        },
+        "D6": {
+          "k": 0,
+          "n": 10,
+          "rate": 0.0,
+          "ci95": [
+            0.0,
+            0.3084971078187607
+          ]
+        },
+        "gate": {
+          "k": 0,
+          "n": 10,
+          "rate": 0.0,
+          "ci95": [
+            0.0,
+            0.3084971078187607
+          ]
+        },
+        "D1": {
+          "k": 0,
+          "n": 10,
+          "rate": 0.0,
+          "ci95": [
+            0.0,
+            0.3084971078187607
+          ]
+        }
+      },
+      "per_detector_bound": 0.047619047619047616,
+      "gate_bound": null
+    },
+    "L3": {
+      "d3_prompts": 64,
+      "d5_items": 256,
+      "rules": [
+        {
+          "detector": "D2",
+          "metric": "mean_kld",
+          "kind": "upper",
+          "value": -0.0
+        },
+        {
+          "detector": "D3",
+          "metric": "mean_agreement_share",
+          "kind": "agreement",
+          "value": 1.0
+        },
+        {
+          "detector": "D5",
+          "metric": "accuracy_drop",
+          "kind": "upper",
+          "value": 0.0
+        },
+        {
+          "detector": "D6",
+          "metric": "ratio.p95_itl_ms",
+          "kind": "upper",
+          "value": 1.0788455380499387
+        }
+      ],
+      "reported_aa_range": {
+        "D2.p99_kld": {
+          "min": 3.3e-05,
+          "max": 3.3e-05
+        },
+        "D2.same_top_p_pct": {
+          "min": 100.0,
+          "max": 100.0
+        },
+        "D3.mean_approx_kl": {
+          "min": 0.0,
+          "max": 0.0
+        },
+        "D3.p95_approx_kl": {
+          "min": 0.0,
+          "max": 0.0
+        },
+        "D5.delta_accuracy": {
+          "min": 0.0,
+          "max": 0.0
+        },
+        "D6.ratio.p95_ttft_ms": {
+          "min": 0.6020715691597824,
+          "max": 1.3023242414965934
+        }
+      },
+      "held_out_false_alarms": {
+        "D2": {
+          "k": 0,
+          "n": 10,
+          "rate": 0.0,
+          "ci95": [
+            0.0,
+            0.3084971078187607
+          ]
+        },
+        "D3": {
+          "k": 0,
+          "n": 10,
+          "rate": 0.0,
+          "ci95": [
+            0.0,
+            0.3084971078187607
+          ]
+        },
+        "D5": {
+          "k": 0,
+          "n": 10,
+          "rate": 0.0,
+          "ci95": [
+            0.0,
+            0.3084971078187607
+          ]
+        },
+        "D6": {
+          "k": 0,
+          "n": 10,
+          "rate": 0.0,
+          "ci95": [
+            0.0,
+            0.3084971078187607
+          ]
+        },
+        "gate": {
+          "k": 0,
+          "n": 10,
+          "rate": 0.0,
+          "ci95": [
+            0.0,
+            0.3084971078187607
+          ]
+        },
+        "D1": {
+          "k": 0,
+          "n": 10,
+          "rate": 0.0,
+          "ci95": [
+            0.0,
+            0.3084971078187607
+          ]
+        }
+      },
+      "per_detector_bound": 0.047619047619047616,
+      "gate_bound": null
+    }
+  },
+  "selected_level": "L1"
+}

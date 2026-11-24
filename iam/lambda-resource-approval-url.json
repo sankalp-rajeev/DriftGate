@@ -8,6 +8,14 @@
       "Action": "lambda:InvokeFunctionUrl",
       "Resource": "arn:aws:lambda:${Region}:${AccountId}:function:${ApprovalFunction}",
       "Condition": {"StringEquals": {"lambda:FunctionUrlAuthType": "NONE"}}
+    },
+    {
+      "Sid": "ApprovalFunctionInvokeViaUrlOnly",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "lambda:InvokeFunction",
+      "Resource": "arn:aws:lambda:${Region}:${AccountId}:function:${ApprovalFunction}",
+      "Condition": {"Bool": {"lambda:InvokedViaFunctionUrl": "true"}}
     }
   ]
 }

@@ -1,0 +1,37 @@
+[
+  {
+    "name": "Q8_0",
+    "mean_kld": -0.0,
+    "accuracy_drop": 0.0
+  },
+  {
+    "name": "Q4_K_M",
+    "mean_kld": 0.045393,
+    "accuracy_drop": 0.08984375
+  },
+  {
+    "name": "Q2_K",
+    "mean_kld": 0.54954,
+    "accuracy_drop": 0.26171875
+  },
+  {
+    "name": "F3",
+    "mean_kld": -0.0,
+    "accuracy_drop": 0.578125
+  },
+  {
+    "name": "Q6_K",
+    "mean_kld": 0.011648,
+    "accuracy_drop": 0.01953125
+  },
+  {
+    "name": "Q5_K_M",
+    "mean_kld": 0.018485,
+    "accuracy_drop": 0.11328125
+  },
+  {
+    "name": "Q3_K_M",
+    "mean_kld": 0.120726,
+    "accuracy_drop": 0.2421875
+  }
+]

@@ -1,5 +1,6 @@
 .DEFAULT_GOAL := help
 .PHONY: help setup test lint fmt models verify serve gate reference fault study study-status up down storage-up storage-down obs-up obs-down orchestrator-zip unlock
+.PHONY: codecommit-push cd-up cd-down orch-up session-down lab-status
 
 # Keep the project venv isolated from any PYTHONPATH set by the shell (e.g. a sourced ROS setup).
 STOP_AT ?=
@@ -11,8 +12,16 @@ AWS_REGION ?= us-east-1
 STACK_NAME ?= driftgate-net
 # Persistent storage stack (PRD 6.8). Separate from the session stack: `make down` never touches it.
 STORAGE_STACK_NAME ?= driftgate-storage
+CD_STACK_NAME ?= driftgate-cd
+ORCH_STACK_NAME ?= driftgate-orchestrator
+REPOSITORY_NAME ?= driftgate
+APPROVAL_EMAIL ?=
 CFN_DIR := deploy/cloudformation
-CFN_TEMPLATES := $(CFN_DIR)/*.yaml
+CFN_TEMPLATES := $(CFN_DIR)/*.yaml orchestrator/template.yaml
+
+# Expanded in Lab recipes only. Resolve the storage output and the account of the active session.
+LAB_BUCKET = aws cloudformation describe-stacks --region "$(AWS_REGION)" --stack-name "$(STORAGE_STACK_NAME)" --query "Stacks[0].Outputs[?OutputKey=='BucketName'].OutputValue | [0]" --output text
+LAB_ACCOUNT = aws sts get-caller-identity --region "$(AWS_REGION)" --query Account --output text
 
 help: ## List make targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-8s %s\n", $$1, $$2}'
@@ -71,6 +80,45 @@ storage-up: ## Create or update the persistent driftgate-storage stack (calls AW
 
 storage-down: ## Delete the storage stack; empty every object version first (calls AWS; teardown only)
 	aws cloudformation delete-stack --region $(AWS_REGION) --stack-name $(STORAGE_STACK_NAME) && aws cloudformation wait stack-delete-complete --region $(AWS_REGION) --stack-name $(STORAGE_STACK_NAME)
+
+codecommit-push: ## Push local main to the Lab repository via git-remote-codecommit
+	git push "codecommit::$(AWS_REGION)://$(REPOSITORY_NAME)" main:main
+
+cd-up: ## Create or update the CodeDeploy stack and the three EC2 instances
+	@set -eu; bucket="$$($(LAB_BUCKET))"; account="$$($(LAB_ACCOUNT))"; \
+	test -n "$$bucket" && test "$$bucket" != None; \
+	aws cloudformation deploy --region "$(AWS_REGION)" --stack-name "$(CD_STACK_NAME)" \
+		--template-file "$(CFN_DIR)/codedeploy.yaml" --tags Project=driftgate --no-fail-on-empty-changeset \
+		--parameter-overrides "NetworkStackName=$(STACK_NAME)" "BucketName=$$bucket" \
+		"LabRoleArn=arn:aws:iam::$$account:role/LabRole" "RepositoryName=$(REPOSITORY_NAME)"
+
+cd-down: ## Delete CodeDeploy and EC2 instances, then wait for stack deletion
+	aws cloudformation delete-stack --region "$(AWS_REGION)" --stack-name "$(CD_STACK_NAME)" && \
+		aws cloudformation wait stack-delete-complete --region "$(AWS_REGION)" --stack-name "$(CD_STACK_NAME)"
+
+orch-up: ## Package and deploy the orchestrator and SNS subscription (APPROVAL_EMAIL required)
+	@test -n "$(strip $(APPROVAL_EMAIL))" || { echo "APPROVAL_EMAIL is required" >&2; exit 2; }
+	$(MAKE) orchestrator-zip
+	@set -eu; bucket="$$($(LAB_BUCKET))"; account="$$($(LAB_ACCOUNT))"; \
+	test -n "$$bucket" && test "$$bucket" != None; \
+	key="lambda/orchestrator-$$(git rev-parse HEAD).zip"; \
+	aws s3 cp --region "$(AWS_REGION)" --sse AES256 artifacts/orchestrator.zip "s3://$$bucket/$$key"; \
+	aws cloudformation deploy --region "$(AWS_REGION)" --stack-name "$(ORCH_STACK_NAME)" \
+		--template-file orchestrator/template.yaml --tags Project=driftgate --no-fail-on-empty-changeset \
+		--parameter-overrides "RunBucketName=$$bucket" "CodeBucket=$$bucket" "CodeKey=$$key" \
+		"LabRoleArn=arn:aws:iam::$$account:role/LabRole" "RepositoryName=$(REPOSITORY_NAME)" \
+		"ApprovalEmail=$(APPROVAL_EMAIL)"
+
+session-down: ## Delete the CodeDeploy stack before deleting the network stack
+	$(MAKE) cd-down
+	$(MAKE) down
+
+lab-status: ## Show DriftGate stack statuses and EC2 instance states
+	aws cloudformation describe-stacks --region "$(AWS_REGION)" --output table \
+		--query "Stacks[?StackName=='$(STORAGE_STACK_NAME)' || StackName=='$(STACK_NAME)' || StackName=='$(CD_STACK_NAME)' || StackName=='$(ORCH_STACK_NAME)'].[StackName,StackStatus]"
+	aws ec2 describe-instances --region "$(AWS_REGION)" --output table \
+		--filters "Name=tag:Project,Values=driftgate" \
+		--query "Reservations[].Instances[].[InstanceId,Tags[?Key=='Name'].Value | [0],State.Name]"
 
 OBS_COMPOSE := docker compose -f observability/docker-compose.yml
 

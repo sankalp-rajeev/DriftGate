@@ -3,6 +3,8 @@
 The laptop study completed on 20 November 2026. L1 was the smallest eligible budget
 (16 D3 prompts and 64 D5 items). Each fault had two fresh redeploys. The results below
 use the saved L1 rows in `runs/2026-11-19-study/matrix.csv`.
+The [study archive](../results/2026-11-19-study/README.md) contains the saved matrix,
+calibration outputs and analysis summaries.
 
 ## L1 detections
 

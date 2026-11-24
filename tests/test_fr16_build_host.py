@@ -144,7 +144,10 @@ def test_no_build_host_fails_the_build_and_releases_lock(pipeline):
 
 def test_idle_sweep_stops_host_after_more_than_30_minutes(pipeline):
     orc, clock = pipeline["orc"], pipeline["clock"]
-    # The host was last used at 12:00 (no run active since).
+    # moto timestamps the instance with wall time. Start our simulated idle period after launch.
+    reservations = pipeline["ec2"].describe_instances(InstanceIds=[pipeline["host_id"]])
+    launch = reservations["Reservations"][0]["Instances"][0]["LaunchTime"]
+    clock.t = max(clock(), launch)
     orc.store.put_host_usage(pipeline["host_id"], clock())
     clock.advance(1800)
     assert orc.handle(scheduled_event())["build_host"]["action"] == "none"
