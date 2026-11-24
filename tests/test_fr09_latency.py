@@ -34,6 +34,14 @@ def test_p95_ttft_and_itl_vs_baseline():
     assert m["ratio"]["p95_itl_ms"] == pytest.approx(2.0)
 
 
+def test_reference_percentiles_use_only_the_candidate_prompt_prefix():
+    prefix = [_run(100, 320) for _ in range(16)]
+    reference = prefix + [_run(1000, 3200) for _ in range(48)]
+    m = d6.metrics(reference, prefix)
+    assert m["reference"] == {"p95_ttft_ms": 100, "p95_itl_ms": 10}
+    assert m["ratio"] == {"p95_ttft_ms": 1, "p95_itl_ms": 1}
+
+
 def test_requests_with_no_generated_tokens_are_left_out_of_itl():
     m = d6.p95s([_run(10, 0, predicted_n=0), _run(10, 50, predicted_n=5)])
     assert m["p95_itl_ms"] == 10.0

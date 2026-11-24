@@ -23,12 +23,21 @@ commands.
 By time, L1 is the only usable candidate for the
 [pre-registered smallest eligible level rule](../prereg/preregistration.md#5-budget-levels).
 L2 and L3 exceed both the 10-minute NFR-01 target and the 15-minute hook limit.
-The L1 estimate is close to the target and falls within the hook limit. A timed
-L1 run on t3.large still needs to verify the 10-minute target, and the held-out
-false-alarm requirement still applies.
+The L1 estimate is above the target and within the hook limit. The measured
+result is below. The held-out false-alarm requirement still applies.
 
 On t3.large, `gate reference` now defaults to 64 prompts and 64 items, which
 covers L1. The default on other instance types is 256 for each detector, and
 `--budget` still overrides either default. ValidateService returns exit 2
 before measuring the candidate if the stored reference has too few results
 for the requested level. The laptop study retains all three levels.
+
+## Measured session 1 results
+
+The t3.large L1 gate took **636 s (10.6 min)**: 116 s for D3 and 520 s for D5.
+That is **6% over NFR-01's 10-minute target**. D5 accounted for about **82%**
+of the measured time. The separate reference run at budget 64 took **1,005 s**.
+The budget levels remain as pre-registered.
+
+See the [session 1 evidence](../lab-constraints-evidence.md#cross-instance-determinism-sample-1)
+for the cross-instance comparison and the D6 denominator used in that run.

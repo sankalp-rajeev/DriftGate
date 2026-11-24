@@ -240,7 +240,7 @@ Prometheus, Grafana and OpenTelemetry run on the laptop (instructor approved, 18
 | S3 lifecycle (`driftgate-storage`) | Noncurrent versions expire after 7 days; incomplete multipart uploads are aborted after 1 day; current versions never expire |
 | Build host start/stop | The orchestrator starts the build host (tag `Role=build-host`) at the build stage if it is stopped, continues when the EC2 state-change event and SSM online status arrive, and stops the host when the build stage ends. A sweep stops it after more than 30 minutes idle. `ec2:StartInstances` and `ec2:StopInstances`, conditioned on that tag, are added to the documented orchestrator policy |
 | D2 thread count and reference key | Always `--threads 2` (the vCPU count of a t3.large), both when generating reference logits and when evaluating candidates, on every machine. Reference logits are stored under the same key as the reference measurement: `reference/<model-sha256>/<config-hash>/<instance-type>/` |
-| ValidateService budget level | L1 (16 D3 prompts and 64 D5 items) is the default in report mode and the only level within the hook limit by the [24 Nov Lab timing estimate](docs/deviations/2026-11-24-t3large-reference-budget.md). The T-08 rule still requires fewer than 2 false alarms per detector in the 10 held-out A/A runs. NFR-01 (10 minutes or less) still requires a timed L1 run on t3.large in the Lab |
+| ValidateService budget level | L1 (16 D3 prompts and 64 D5 items) is the default in report mode and the only level within the hook limit by the [24 Nov Lab timing estimate](docs/deviations/2026-11-24-t3large-reference-budget.md). The measured L1 run took 636 s on t3.large, 6% over NFR-01. The T-08 rule still requires fewer than 2 false alarms per detector in the 10 held-out A/A runs |
 | Reference measurement (`gate reference`) | Runs D3, D5 and D6 on the reference revision and writes the JSON to the reference key above. The default budget per detector is 64 on t3.large and 256 elsewhere. The orchestrator runs it automatically when no reference exists for that key, with a 7,200-second SSM execution timeout for both reference and build commands. D6 thresholds are expressed as a ratio to the reference p95, not in milliseconds |
 | Stale lock | `runs/active.json` holds the `run_id` and `expires_at` = start + 2 h. An expired lock is stale: the next run takes it over and marks the old run abandoned in its run record. `make unlock` is the manual recovery |
 | Reference key (19 Nov, replaces the earlier pinned-key option) | `gate/baseline.yaml` pins the model SHA-256 and config hash of the approved reference release; only a human changes it. At runtime the key is `reference/<baseline model sha>/<baseline config hash>/<instance-type>/`. The instance type is derived: IMDSv2 on EC2, `local-<hostname>` on the laptop. Candidates are always compared against the baseline's reference. `--reference-key` stays as a test override. `gate reference` and `gate.d2 base` refuse to write from a serving config that is not the baseline. `reference_store.key` is removed. `deploy/hooks/after_install.sh` fetches the baseline key for its instance type |
@@ -541,6 +541,10 @@ From course materials that quote Lab restriction notes (not AWS docs): us-east-1
 | EC2 with LabInstanceProfile registers with Systems Manager; Run Command `AWS-RunShellScript` | Works | 17 Nov |
 | CodeDeploy console | Opens | 17 Nov |
 | CodeDeploy EC2 deployment with LabRole (T-01b) | Passed: created a deployment group with `LabRole` as the service role and deployed an S3 `.zip` revision to an EC2 instance with `LabInstanceProfile`. Deployment `d-IBULITHXM` finished `Succeeded`. [Evidence](docs/lab-constraints-evidence.md#codedeploy-deployment-with-labrole) | 20 Nov (reported) |
+| Storage bucket SSE enforcement (T-31, #37) | `PutObject` without SSE was explicitly denied. The upload with `--sse AES256` succeeded. [Evidence](docs/lab-constraints-evidence.md#storage-encryption) | 24 Nov |
+| Network stack lifecycle (T-10, #13) | NAT create 2m41s and clean delete. No-NAT create 3m12s, update to NAT 2m47s, and session teardown 3m42s. [Evidence](docs/lab-constraints-evidence.md#network-stack) | 24 Nov |
+| First CodeDeploy rollout behind the ALB (T-12) | `d-PFYHV350N` succeeded on both t3.large instances. The ALB returned HTTP 200 at `/health`. [Evidence](docs/lab-constraints-evidence.md#first-codedeploy-rollout) | 24 Nov |
+| t3.large L1 timing and cross-instance sample | L1 took 636 s, 6% over NFR-01. The budget-64 reference took 1,005 s. Both serving hosts matched the build host on D3 and D5. [Timing](docs/deviations/2026-11-24-t3large-reference-budget.md#measured-session-1-results) and [determinism evidence](docs/lab-constraints-evidence.md#cross-instance-determinism-sample-1) | 24 Nov |
 | CodePipeline console | Opens (pipeline cannot run) | 17 Nov |
 | Cost Explorer | Works; per-service data visible, about a day behind | 17 Nov |
 | Local llama-server in WSL (Qwen2.5-0.5B Q4_K_M, CPU) | Works; about 90 to 100 tokens/s generation on the laptop | 17 Nov |
@@ -551,10 +555,9 @@ Remaining probes:
 - [ ] t3.large with LabInstanceProfile, CodeDeploy agent, reaches S3 and Hugging Face
 - [ ] PutMetricData from instance, alarm on it
 - [ ] SNS email subscription and Lambda function URL
-- [ ] NAT gateway and interface endpoint creation (delete immediately)
+- [ ] Interface endpoint creation (delete immediately)
 - [ ] Session Manager to instance
 - [ ] IAM Access Analyzer policy validation
-- [ ] Trivial CloudFormation stack create and delete
 - [ ] End session, list what still bills
 
 ### 14.3 Instructor guidance (Professor Al-Obaidy, email, 18 Nov 2026)

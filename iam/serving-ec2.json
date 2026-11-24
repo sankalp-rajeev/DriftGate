@@ -40,6 +40,12 @@
       ]
     },
     {
+      "Sid": "ReadWriteLlamaCppCache",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject"],
+      "Resource": "arn:aws:s3:::${ArtifactBucket}/bin/llama.cpp/*"
+    },
+    {
       "Sid": "PublishGateMetricOnly",
       "Effect": "Allow",
       "Action": "cloudwatch:PutMetricData",

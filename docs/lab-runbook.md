@@ -20,9 +20,19 @@ Use GitHub `main` after the Phase 0 PR is merged. The Lab repository defaults to
 4. Run `make up`, then `make cd-up`. CloudFormation stack completion means the
    instances exist. Check `make lab-status` for their states. On the build host,
    use SSM Run Command to check `test -f /opt/driftgate/.bootstrap-done` and
-   review `/var/log/driftgate-bootstrap.log` if the marker is missing.
+   review `/var/log/driftgate-bootstrap.log`. Wait for `DriftGate build host READY`
+   in that log before the first deploy: bootstrap fills the shared binary cache,
+   so the serving instances hit the cache instead of compiling.
 5. Run `make orch-up APPROVAL_EMAIL=you@example.org` and confirm the SNS subscription
    email when prompted. Use `make lab-status` to check all stack and instance states.
+
+The build host and serving hooks share the llama.cpp cache in the storage bucket
+at `bin/llama.cpp/<locked commit>/al2023-x86_64-avx512.tar.gz`. The first cache miss
+builds both tools with `GGML_NATIVE=OFF` and `GGML_AVX512=ON`, using AVX-512
+F/BW/DQ/VL shared by the t3 hosts' Intel Xeon Skylake-SP and Cascade Lake CPUs.
+VNNI, VBMI and BF16 remain off. Update the cache key if the instruction flags change.
+For session 2,
+regenerate the reference measurement and D2 logits using that same Lab build.
 
 Before the first pipeline smoke run, prepare the reference on the approved baseline
 revision on the t3.large build host. From `/opt/driftgate`, export
