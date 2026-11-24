@@ -13,7 +13,7 @@ HEAD = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=Tr
 
 
 def _build(tmp_path, *args, steps="manifest", env=None):
-    full_env = dict(os.environ, DRIFTGATE_BUILD_STEPS=steps, **(env or {}))
+    full_env = _clean_env(tmp_path) | {"DRIFTGATE_BUILD_STEPS": steps} | (env or {})
     return subprocess.run(
         [str(BUILD), *args, "--out", str(tmp_path)],
         capture_output=True,
@@ -73,14 +73,16 @@ def test_manifest_step_passes_then_fails_on_hash_mismatch(tmp_path):
     assert [s["name"] for s in build["steps"]] == ["commit", "manifest"]  # d1 never ran
 
 
-def _clean_env():
-    return {k: v for k, v in os.environ.items() if not k.startswith("DRIFTGATE_")}
+def _clean_env(tmp_path):
+    env = {k: v for k, v in os.environ.items() if not k.startswith("DRIFTGATE_")}
+    # The suite also runs on the build host, where the real build.env enables S3 uploads.
+    return env | {"DRIFTGATE_BUILD_ENV": str(tmp_path / "no-build.env")}
 
 
 def test_package_writes_codedeploy_bundle_with_appspec_at_root(tmp_path):
     import zipfile
 
-    env = _clean_env() | {"DRIFTGATE_BUILD_STEPS": "package"}
+    env = _clean_env(tmp_path) | {"DRIFTGATE_BUILD_STEPS": "package"}
     res = subprocess.run(
         [str(BUILD), "--commit", HEAD, "--run-id", "r4", "--out", str(tmp_path)],
         capture_output=True,
@@ -100,7 +102,7 @@ def test_package_writes_codedeploy_bundle_with_appspec_at_root(tmp_path):
 
 
 def test_upload_is_off_by_default_and_needs_a_bucket(tmp_path):
-    env = _clean_env() | {"DRIFTGATE_BUILD_STEPS": "", "PATH": "/usr/bin:/bin"}
+    env = _clean_env(tmp_path) | {"DRIFTGATE_BUILD_STEPS": "", "PATH": "/usr/bin:/bin"}
     res = subprocess.run(
         [str(BUILD), "--commit", HEAD, "--run-id", "r5", "--out", str(tmp_path), "--upload"],
         capture_output=True,
@@ -112,3 +114,36 @@ def test_upload_is_off_by_default_and_needs_a_bucket(tmp_path):
     build = json.loads((tmp_path / "build.json").read_text())
     assert build["failed_step"] == "upload"
     assert "needs DRIFTGATE_BUNDLE_BUCKET" in res.stderr
+
+
+@pytest.mark.parametrize("override", [False, True])
+def test_ssm_build_uses_encrypted_upload_and_respects_environment(tmp_path, override):
+    settings = tmp_path / "build.env"
+    settings.write_text("DRIFTGATE_BUNDLE_BUCKET=lab-bucket\nDRIFTGATE_UPLOAD=1\n")
+    aws = tmp_path / "aws"
+    aws.write_text('#!/bin/bash\nprintf "%s\\n" "$@"\n')
+    aws.chmod(0o755)
+    env = _clean_env(tmp_path) | {
+        "DRIFTGATE_BUILD_ENV": str(settings),
+        "DRIFTGATE_BUILD_STEPS": "package",
+        "PATH": f"{tmp_path}:{os.environ['PATH']}",
+    }
+    if override:
+        env["DRIFTGATE_BUNDLE_BUCKET"] = "override-bucket"
+    result = subprocess.run(
+        [str(BUILD), "--commit", HEAD, "--run-id", "r6", "--out", str(tmp_path)],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    bucket = "override-bucket" if override else "lab-bucket"
+    assert (tmp_path / "upload.log").read_text().splitlines() == [
+        "s3",
+        "cp",
+        "--sse",
+        "AES256",
+        str(tmp_path / "bundles" / f"{HEAD}.zip"),
+        f"s3://{bucket}/bundles/{HEAD}.zip",
+    ]

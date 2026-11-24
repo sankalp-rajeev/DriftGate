@@ -3,7 +3,8 @@ Description: >-
   DriftGate CodeDeploy stack (FR-17, FR-18, ADR-002). CodeDeploy application and EC2 deployment
   group (in-place, OneAtATime, LabRole as service role) behind the serving target group of the
   network stack, which the group refers to by name, plus the two serving instances launched from
-  the network stack's launch template. Per session, created after the network stack. T-13 adds
+  the network stack's launch template and the SSM build host. Per session, created after the
+  network stack. T-13 adds
   the GateScore rollback alarm (FR-19, FR-20), a log of CodeDeploy state changes and the
   CloudWatch dashboard (FR-29).
 
@@ -21,6 +22,11 @@ Parameters:
   DeploymentGroupName:
     Type: String
     Default: driftgate-serving
+  RepositoryName:
+    Type: String
+    Default: driftgate
+    AllowedPattern: "[A-Za-z0-9_.-]{1,100}"
+    Description: CodeCommit repository in us-east-1 with main seeded before launch
   BucketName:
     Type: String
     Description: driftgate-storage bucket (BucketName output); bundles, models, reference, verdicts
@@ -223,6 +229,40 @@ Resources:
               - "loadbalancer/"
               - Fn::ImportValue: !Sub "${NetworkStackName}-AlbArn"
 
+  BuildHost:
+    Type: AWS::EC2::Instance
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId:
+          Fn::ImportValue: !Sub "${NetworkStackName}-BuildHostLaunchTemplateId"
+        Version: "1"
+      SubnetId: !Select
+        - 0
+        - !Split
+          - ","
+          - Fn::ImportValue: !Sub "${NetworkStackName}-InstanceSubnetIds"
+      Tags:
+        - Key: Name
+          Value: driftgate-build-host
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euo pipefail
+          export HOME=/root
+          export UV_NO_MODIFY_PATH=1
+          exec >> /var/log/driftgate-bootstrap.log 2>&1
+          dnf install -y git cmake gcc-c++ make python3-pip
+          curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+          python3 -m pip install git-remote-codecommit
+          export PATH="/usr/local/bin:$PATH"
+          git clone "codecommit::us-east-1://${RepositoryName}" /opt/driftgate
+          mkdir -p /etc/driftgate
+          cat > /etc/driftgate/build.env <<EOF
+          DRIFTGATE_BUNDLE_BUCKET=${BucketName}
+          DRIFTGATE_UPLOAD=1
+          EOF
+          /opt/driftgate/deploy/bootstrap_build_host.sh
+
   ServingInstanceA:
     Type: AWS::EC2::Instance
     Properties:
@@ -245,6 +285,8 @@ Resources:
           # the instance settings read by the deploy hooks. llama.cpp and the model are
           # installed by the AfterInstall hook so they follow the revision being deployed.
           set -euxo pipefail
+          export HOME=/root
+          export UV_NO_MODIFY_PATH=1
           dnf install -y ruby wget git cmake gcc-c++ make
           cd /tmp
           wget -q https://aws-codedeploy-${AWS::Region}.s3.${AWS::Region}.amazonaws.com/latest/install
@@ -278,6 +320,8 @@ Resources:
           #!/bin/bash
           # Same setup as ServingInstanceA.
           set -euxo pipefail
+          export HOME=/root
+          export UV_NO_MODIFY_PATH=1
           dnf install -y ruby wget git cmake gcc-c++ make
           cd /tmp
           wget -q https://aws-codedeploy-${AWS::Region}.s3.${AWS::Region}.amazonaws.com/latest/install
@@ -292,6 +336,8 @@ Resources:
           EOF
 
 Outputs:
+  BuildHostId:
+    Value: !Ref BuildHost
   ApplicationName:
     Value: !Ref Application
   DeploymentGroupName:

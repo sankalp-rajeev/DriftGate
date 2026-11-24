@@ -1,5 +1,7 @@
 CloudFormation stacks (FR-21, ADR-005, PRD §6.8).
 
+See the [Learner Lab runbook](../../docs/lab-runbook.md) for the session start and end order.
+
 ## `network.yaml`: per-session network stack (`make up` / `make down`)
 
 Created at the start of a Lab session and deleted at the end, in us-east-1:
@@ -20,6 +22,13 @@ Instances go in the subnets from the `InstanceSubnetIds` output. Parameters are 
 make up     # aws cloudformation deploy ... (Lab session only)
 make down   # aws cloudformation delete-stack ... && wait stack-delete-complete
 ```
+
+## `codedeploy.yaml`: per-session deployment stack (`make cd-up` / `make cd-down`)
+
+Launches two serving instances and one SSM build host from the network launch templates.
+The build host clones CodeCommit, builds both pinned llama.cpp tools and verifies the models
+from Hugging Face. Its setup log is `/var/log/driftgate-bootstrap.log`. Use `make session-down`
+to delete this stack before the network stack.
 
 ## `storage.yaml`: persistent storage stack, `driftgate-storage` (`make storage-up` / `make storage-down`)
 

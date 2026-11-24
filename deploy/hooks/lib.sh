@@ -5,15 +5,7 @@ HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Root of the revision being deployed (CodeDeploy runs hooks from its deployment archive).
 BUNDLE_DIR="$(cd "$HOOK_DIR/../.." && pwd)"
 
-# Export KEY=VALUE lines from a file, keeping any variable that is already set.
-load_env() {
-  local line key
-  while IFS= read -r line || [ -n "$line" ]; do
-    case "$line" in '' | \#*) continue ;; esac
-    key="${line%%=*}"
-    if [ -z "${!key+x}" ]; then export "$key=${line#*=}"; fi
-  done <"$1"
-}
+source "$BUNDLE_DIR/deploy/lib.sh"
 
 INSTANCE_ENV="${DRIFTGATE_INSTANCE_ENV:-/etc/driftgate/deploy.env}"
 if [ -f "$INSTANCE_ENV" ]; then load_env "$INSTANCE_ENV"; fi

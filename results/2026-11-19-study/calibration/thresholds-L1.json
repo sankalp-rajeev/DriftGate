@@ -1,0 +1,29 @@
+{
+  "schema": "driftgate.thresholds/2",
+  "rules": [
+    {
+      "detector": "D2",
+      "metric": "mean_kld",
+      "kind": "upper",
+      "value": -0.0
+    },
+    {
+      "detector": "D3",
+      "metric": "mean_agreement_share",
+      "kind": "agreement",
+      "value": 1.0
+    },
+    {
+      "detector": "D5",
+      "metric": "accuracy_drop",
+      "kind": "upper",
+      "value": 0.0
+    },
+    {
+      "detector": "D6",
+      "metric": "ratio.p95_itl_ms",
+      "kind": "upper",
+      "value": 1.3720862440822872
+    }
+  ]
+}

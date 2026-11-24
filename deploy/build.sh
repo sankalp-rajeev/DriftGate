@@ -21,6 +21,13 @@
 # D1 and D2 run inside `gate.telemetry span` (FR-24): a no-op unless DRIFTGATE_TELEMETRY=1, then
 # a gate.D1 / gate.D2 span under TRACEPARENT, if set (laptop runs with the local collector).
 set -uo pipefail
+cd "$(dirname "$0")/.." || exit 2
+source deploy/lib.sh
+BUILD_ENV="${DRIFTGATE_BUILD_ENV:-/etc/driftgate/build.env}"
+if [[ -f "$BUILD_ENV" ]]; then
+  load_env "$BUILD_ENV" || exit 2
+  load_env deploy/config.env || exit 2
+fi
 
 usage() {
   echo "usage: deploy/build.sh --commit <commit> --run-id <id> [--config PATH] [--out DIR] [--upload]" >&2
@@ -42,7 +49,6 @@ done
 [[ -n "$COMMIT" && -n "$RUN_ID" ]] || usage
 [[ "$RUN_ID" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "invalid --run-id" >&2; exit 2; }
 
-cd "$(dirname "$0")/.." || exit 2
 unset PYTHONPATH
 OUT="${OUT:-runs/build-$RUN_ID}"
 STEPS="${DRIFTGATE_BUILD_STEPS-tests manifest d1 d2 package}"
@@ -113,6 +119,6 @@ if [[ "$UPLOAD" == "1" ]]; then
     record upload 2 0 ""
   fi
   run_step upload "$OUT/upload.log" \
-    aws s3 cp "$OUT/bundles/$COMMIT.zip" "s3://$DRIFTGATE_BUNDLE_BUCKET/bundles/$COMMIT.zip"
+    aws s3 cp --sse AES256 "$OUT/bundles/$COMMIT.zip" "s3://$DRIFTGATE_BUNDLE_BUCKET/bundles/$COMMIT.zip"
 fi
 finish

@@ -16,6 +16,7 @@ artifacts/
 runs/
 *.gguf
 *.bin
+.bootstrap-done
 
 # Secrets and scratch
 .env

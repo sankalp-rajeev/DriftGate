@@ -4,6 +4,7 @@ token); no response within a set time means reject.
 AC: approve starts Deploy; reject or timeout ends the run; decision recorded in the run record.
 """
 
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -173,7 +174,13 @@ def test_post_with_base64_body(pipeline):
     assert approval.handle(event, pipeline["orc"])["statusCode"] == 200
 
 
-def test_approval_lambda_entrypoint(pipeline):
+def test_approval_lambda_entrypoint(pipeline, monkeypatch):
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return pipeline["clock"]().astimezone(tz)
+
+    monkeypatch.setattr("orchestrator.handler.datetime", FixedDateTime)
     run_id = started_run(pipeline)
     _url, params = email_links(pipeline)["reject"]
     resp = approval.lambda_handler(url_event("POST", params), None)
@@ -229,7 +236,7 @@ def test_template_has_function_url_topic_and_sweep(template):
     url_perms = [
         r["Properties"]
         for _n, r in by_type["AWS::Lambda::Permission"]
-        if r["Properties"].get("FunctionUrlAuthType") == "NONE"
+        if r["Properties"].get("Principal") == "*"
     ]
     assert url_perms == [
         {
@@ -237,5 +244,11 @@ def test_template_has_function_url_topic_and_sweep(template):
             "FunctionName": {"Ref": "ApprovalFunction"},
             "FunctionUrlAuthType": "NONE",
             "Principal": "*",
-        }
+        },
+        {
+            "Action": "lambda:InvokeFunction",
+            "FunctionName": {"Ref": "ApprovalFunction"},
+            "InvokedViaFunctionUrl": True,
+            "Principal": "*",
+        },
     ]

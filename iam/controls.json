@@ -76,7 +76,7 @@
       "policy": "lambda-resource-approval-url.json",
       "status": "enforced",
       "applied_in": "orchestrator/template.yaml",
-      "lab_reality": "Only lambda:InvokeFunctionUrl with FunctionUrlAuthType NONE; the request is authorized by the one-time token"
+      "lab_reality": "InvokeFunctionUrl requires FunctionUrlAuthType NONE and InvokeFunction is restricted to calls via the URL. The one-time token authorizes the request"
     },
     {
       "id": "approval-token",
