@@ -23,7 +23,6 @@ HOOKS = ROOT / "deploy" / "hooks"
 APPSPEC = ROOT / "deploy" / "appspec.yml"
 EXPECTED_HOOKS = ["ApplicationStop", "BeforeInstall", "AfterInstall", "ApplicationStart",
                   "ValidateService"]  # fmt: skip
-BUDGET = 4
 
 
 def load_appspec():
@@ -90,7 +89,6 @@ def sandbox(tmp_path):
             DRIFTGATE_INSTANCE_ENV=str(tmp_path / "no-instance.env"),
             DRIFTGATE_APP_DIR=str(ROOT),
             DRIFTGATE_GATE_CONFIG=str(gate_cfg_path),
-            DRIFTGATE_GATE_BUDGET=str(BUDGET),
             DRIFTGATE_SERVING_PORT=str(port),
             DRIFTGATE_RUN_DIR=str(run_dir),
             DRIFTGATE_HEALTH_TIMEOUT_S="4",
@@ -106,7 +104,7 @@ def sandbox(tmp_path):
     def measure_reference(port):
         rc = cli.main(
             ["measure", "--gate-config", str(gate_cfg_path), "--server",
-             f"http://127.0.0.1:{port}", "--budget", str(BUDGET), "--seed", "0",
+             f"http://127.0.0.1:{port}", "--level", "L1", "--seed", "0",
              "--out", gate_cfg["reference"]]
         )  # fmt: skip
         assert rc == 0
@@ -142,7 +140,8 @@ def test_validate_service_report_mode_records_verdict_and_passes(sandbox):
     assert set(verdict["detectors"]) == {"D3", "D5", "D6"}
     assert verdict["decision"]["mode"] == "report"
     assert verdict["detectors"]["D3"]["mean_agreement_share"] < 1.0
-    assert (sandbox["verdict"].parent / "measurement.json").exists()
+    measurement = json.loads((sandbox["verdict"].parent / "measurement.json").read_text())
+    assert (len(measurement["d3"]), len(measurement["d5"])) == (16, 64)
 
 
 def test_validate_service_enforce_fails_on_gate_failure(sandbox):

@@ -134,7 +134,7 @@ def s3_uri(gate_config: dict, key: str, override: str | None = None) -> str | No
 
 def upload(local: Path, uri: str, run=subprocess.run) -> None:
     """Copy one file to S3 (only called with an explicit --upload)."""
-    run(["aws", "s3", "cp", "--only-show-errors", str(local), uri], check=True)
+    run(["aws", "s3", "cp", "--only-show-errors", "--sse", "AES256", str(local), uri], check=True)
 
 
 def resolve_key(

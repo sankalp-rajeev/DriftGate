@@ -19,7 +19,7 @@ DRIFTGATE_FORCE_FAIL="$DRIFTGATE_FORCE_FAIL" "$PY" -m gate run \
   --gate-config "$DRIFTGATE_GATE_CONFIG" \
   --config "$DRIFTGATE_SERVING_CONFIG" \
   --server "$SERVER_URL" \
-  --budget "$DRIFTGATE_GATE_BUDGET" \
+  --level "$DRIFTGATE_GATE_LEVEL" \
   --seed "$DRIFTGATE_GATE_SEED" \
   --measurement-out "$out/measurement.json" \
   --out "$out/verdict.json"
@@ -29,7 +29,8 @@ log "gate exit $rc; verdict at $out/verdict.json"
 
 if [ -n "$DRIFTGATE_BUCKET" ] && [ -f "$out/verdict.json" ]; then
   dest="s3://$DRIFTGATE_BUCKET/deployments/${DEPLOYMENT_ID:-local}/$(instance_id)/"
-  aws s3 cp --only-show-errors "$out/verdict.json" "$dest" || log "verdict upload to $dest failed"
+  aws s3 cp --only-show-errors --sse AES256 "$out/verdict.json" "$dest" ||
+    log "verdict upload to $dest failed"
 fi
 
 if [ "$DRIFTGATE_PUBLISH_METRICS" = 1 ] && [ -f "$out/verdict.json" ]; then

@@ -114,7 +114,7 @@ def test_hook_publish_failure_does_not_change_hook_exit(tmp_path, gate_exit):
     cfg_path.write_text(json.dumps(gate_cfg))
     with FakeLlama() as server:
         assert cli.main(["measure", "--gate-config", str(cfg_path), "--server",
-                         f"http://127.0.0.1:{server.port}", "--budget", "2", "--seed", "0",
+                         f"http://127.0.0.1:{server.port}", "--level", "L1", "--seed", "0",
                          "--out", gate_cfg["reference"]]) == 0  # fmt: skip
         env = {k: v for k, v in os.environ.items() if not k.startswith("DRIFTGATE_")}
         env.pop("PYTHONPATH", None)
@@ -122,7 +122,6 @@ def test_hook_publish_failure_does_not_change_hook_exit(tmp_path, gate_exit):
             DRIFTGATE_INSTANCE_ENV=str(tmp_path / "none.env"),
             DRIFTGATE_APP_DIR=str(ROOT),
             DRIFTGATE_GATE_CONFIG=str(cfg_path),
-            DRIFTGATE_GATE_BUDGET="2",
             DRIFTGATE_SERVING_PORT=str(server.port),
             DRIFTGATE_RUN_DIR=str(tmp_path / "runs"),
             DRIFTGATE_HEALTH_TIMEOUT_S="4",

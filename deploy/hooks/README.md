@@ -11,13 +11,13 @@ instances. Settings come from `deploy/config.env`. Values already in the environ
 | ValidateService | `validate_service.sh` | `python -m gate run` (D3, D5, D6) against the local llama-server; keeps the verdict and uploads it to S3; exits non-zero on gate failure (1), forced failure (`DRIFTGATE_FORCE_FAIL=1`), a gate input error (2), or an unhealthy server (3) |
 
 The gate mode comes from `gate/config.yaml`. It is `report` (exit 0) until `gate/thresholds.json`
-exists, then `enforce`.
+exists, then `enforce`. `DRIFTGATE_GATE_LEVEL` defaults to L1 (16 D3 prompts, 64 D5 items).
 
 Local run against a llama-server on port 8081, with no systemd and no S3:
 
     export DRIFTGATE_APP_DIR=$PWD DRIFTGATE_SYSTEMD=0 DRIFTGATE_SERVING_PORT=8081 \
       DRIFTGATE_RUN_DIR=$PWD/runs/hooks DRIFTGATE_INSTANCE_ENV=/dev/null
-    python -m gate measure --server http://127.0.0.1:8081 --budget 16 --seed 0 \
+    python -m gate measure --server http://127.0.0.1:8081 --level L1 --seed 0 \
       --out artifacts/reference/measurement.json     # once, on the reference config
     bash deploy/hooks/application_start.sh
     bash deploy/hooks/validate_service.sh; echo $?
