@@ -38,6 +38,7 @@ class BuildConfig:
     document: str
     working_directory: str
     commands: list[str]
+    execution_timeout_seconds: int = 7200
 
 
 @dataclass(frozen=True)

@@ -52,6 +52,7 @@ def test_build_command_targets_build_host_with_commit(pipeline):
     assert cmd["InstanceIds"] == [pipeline["host_id"]]
     assert cmd["DocumentName"] == "AWS-RunShellScript"
     assert any(COMMIT in c for c in cmd["Parameters"]["commands"])
+    assert cmd["Parameters"]["executionTimeout"] == ["7200"]
     assert cmd["OutputS3BucketName"] == BUCKET
 
 

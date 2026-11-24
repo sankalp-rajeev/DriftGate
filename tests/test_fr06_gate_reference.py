@@ -147,6 +147,31 @@ def test_reference_measures_and_stores_under_the_key_without_upload(tmp_path, mo
     assert v["decision"]["gate_score"] is None
 
 
+@pytest.mark.parametrize(
+    ("instance", "use_key", "budget_override", "expected"),
+    [
+        ("t3.large", False, None, 64),
+        ("t3.large", True, None, 64),
+        ("local-laptop", False, None, 256),
+        ("t3.large", False, 4, 4),
+    ],
+)
+def test_reference_budget_uses_instance_type_unless_overridden(
+    tmp_path, instance, use_key, budget_override, expected
+):
+    g = _gate_config(tmp_path)
+    key = ref.reference_key(SERVING, instance)
+    location = ["--reference-key", key] if use_key else ["--instance-type", instance]
+    budget = [] if budget_override is None else ["--budget", str(budget_override)]
+    with FakeLlama() as server:
+        assert cli.main(
+            ["reference", "--gate-config", str(g),
+             "--server", f"http://127.0.0.1:{server.port}", "--seed", "0", *location, *budget]
+        ) == 0  # fmt: skip
+    measurement = json.loads((tmp_path / key / "measurement.json").read_text())
+    assert (len(measurement["d3"]), len(measurement["d5"])) == (expected, expected)
+
+
 def test_upload_only_with_explicit_flag(tmp_path, monkeypatch):
     calls = []
 

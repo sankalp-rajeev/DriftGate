@@ -289,7 +289,10 @@ class Orchestrator:
             InstanceIds=[instance_id],
             DocumentName=self.cfg.build.document,
             Comment=f"driftgate reference {run_id}"[:100],
-            Parameters={"commands": [c.format(**fields) for c in self.cfg.reference.commands]},
+            Parameters={
+                "commands": [c.format(**fields) for c in self.cfg.reference.commands],
+                "executionTimeout": [str(self.cfg.build.execution_timeout_seconds)],
+            },
             OutputS3BucketName=self.cfg.run_bucket,
             OutputS3KeyPrefix=self.store.run_key_prefix(run_id, "reference-log/"),
         )
@@ -391,7 +394,10 @@ class Orchestrator:
             InstanceIds=[instance_id],
             DocumentName=self.cfg.build.document,
             Comment=f"driftgate build {run_id}"[:100],
-            Parameters={"commands": commands},
+            Parameters={
+                "commands": commands,
+                "executionTimeout": [str(self.cfg.build.execution_timeout_seconds)],
+            },
             OutputS3BucketName=self.cfg.run_bucket,
             OutputS3KeyPrefix=log_prefix,
         )

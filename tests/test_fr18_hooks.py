@@ -101,10 +101,11 @@ def sandbox(tmp_path):
         e.update(extra)
         return e
 
-    def measure_reference(port):
+    def measure_reference(port, *budget_args):
+        budget_args = budget_args or ("--level", "L1")
         rc = cli.main(
             ["measure", "--gate-config", str(gate_cfg_path), "--server",
-             f"http://127.0.0.1:{port}", "--level", "L1", "--seed", "0",
+             f"http://127.0.0.1:{port}", *budget_args, "--seed", "0",
              "--out", gate_cfg["reference"]]
         )  # fmt: skip
         assert rc == 0
@@ -199,6 +200,18 @@ def test_validate_service_fails_without_reference(sandbox):
     with FakeLlama() as server:
         r = run_hook("validate_service.sh", sandbox["env"](server.port))
     assert r.returncode == 2
+
+
+@pytest.mark.parametrize(("level", "d3", "d5"), [("L2", 32, 128), ("L3", 64, 256)])
+def test_validate_service_refuses_level_beyond_stored_reference(sandbox, level, d3, d5):
+    with FakeLlama() as server:
+        sandbox["measure_reference"](server.port, "--budget", "64")
+        r = run_hook("validate_service.sh", sandbox["env"](server.port, DRIFTGATE_GATE_LEVEL=level))
+    assert r.returncode == 2
+    assert f"stored reference does not cover {level}" in r.stderr
+    assert f"requires D3 {d3} and D5 {d5}" in r.stderr
+    assert "has D3 64 and D5 64" in r.stderr
+    assert not (sandbox["verdict"].parent / "measurement.json").exists()
 
 
 def test_application_start_waits_for_health(sandbox):

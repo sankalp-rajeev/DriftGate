@@ -17,7 +17,8 @@ Gate mode (PRD Section 6.8): `report` records the verdict and exits 0; `enforce`
 detector against the thresholds file (gate/score.py) and exits 1 when the gate score is above 1;
 `auto` is `enforce` once the thresholds file exists (produced by A/A calibration, FR-12) and
 `report` until then. `DRIFTGATE_FORCE_FAIL=1` makes `run` and `compare` exit 1 in any mode
-(rollback drills). Exit 2 is a usage or input error, including a missing reference.
+(rollback drills). Exit 2 is a usage or input error, including a reference missing coverage
+for the requested level.
 """
 
 from __future__ import annotations
@@ -301,6 +302,7 @@ def _main(args, tel, span, run_id: str) -> int:
         gate_config = load_yaml(args.gate_config)
         if args.cmd == "reference":
             return _reference(args, gate_config, tel)
+        reference = None
         if args.cmd in ("measure", "run"):
             url = args.server or server_url(load_yaml(args.config))
             if args.level:
@@ -308,6 +310,15 @@ def _main(args, tel, span, run_id: str) -> int:
                 n3, n5 = lv["d3"], lv["d5"]
             else:
                 n3, n5 = args.budget, args.budget
+            if args.cmd == "run" and args.level:
+                reference = json.loads(reference_path(args, gate_config).read_text())
+                have_d3, have_d5 = len(reference["d3"]), len(reference["d5"])
+                if have_d3 < n3 or have_d5 < n5:
+                    raise ValueError(
+                        f"stored reference does not cover {args.level}: "
+                        f"requires D3 {n3} and D5 {n5}, has D3 {have_d3} and D5 {have_d5}. "
+                        "Select a covered level or regenerate the reference."
+                    )
             m = measure(
                 LlamaServer(url),
                 n3,
@@ -328,8 +339,9 @@ def _main(args, tel, span, run_id: str) -> int:
             candidate = m
         else:
             candidate = json.loads(args.candidate.read_text())
-        ref_path = reference_path(args, gate_config)
-        v = verdict(json.loads(ref_path.read_text()), candidate, gate_config, tel=tel)
+        if reference is None:
+            reference = json.loads(reference_path(args, gate_config).read_text())
+        v = verdict(reference, candidate, gate_config, tel=tel)
     except (OSError, ValueError, KeyError) as e:
         sys.stderr.write(f"gate: {type(e).__name__}: {e}\n")
         span.set_attribute("process.exit.code", EXIT_ERROR)
@@ -375,7 +387,11 @@ def _reference(args, gate_config: dict, tel) -> int:
         )
     if args.upload and uri is None:
         raise ValueError("--upload needs reference_store.s3_uri or --s3-uri")
-    budget = args.budget or gate_config["reference_store"]["budget"]
+    model_sha, config_sha, instance = key.split("/")[1:4]
+    store = gate_config["reference_store"]
+    budget = args.budget
+    if budget is None:
+        budget = store.get("budget_by_instance_type", {}).get(instance, store["budget"])
     url = args.server or server_url(serving)
     m = measure(
         LlamaServer(url),
@@ -391,9 +407,9 @@ def _reference(args, gate_config: dict, tel) -> int:
     m["reference"] = {
         "schema": REFERENCE_SCHEMA,
         "key": key,
-        "model_sha256": key.split("/")[1],
-        "config_hash": key.split("/")[2],
-        "instance_type": key.split("/")[3],
+        "model_sha256": model_sha,
+        "config_hash": config_sha,
+        "instance_type": instance,
     }
     path = local / ref_store.MEASUREMENT_FILE
     _write(m, path)

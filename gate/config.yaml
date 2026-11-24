@@ -16,6 +16,8 @@ reference_store:
   local_root: artifacts
   s3_uri: null          # e.g. s3://<bucket>; used only with an explicit --upload
   budget: 256           # reference covers every level: D3 and D5 items 1..256
+  budget_by_instance_type:
+    t3.large: 64        # 64 D3 prompts and 64 D5 items cover L1
 # Budget levels (PRD Section 6.8): items are prefixes of the frozen D3 and D5 files; a run at L3
 # covers L1 and L2. D3 prompts and D5 items per level.
 levels:
