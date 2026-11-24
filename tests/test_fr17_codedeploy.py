@@ -114,6 +114,14 @@ def test_user_data_installs_codedeploy_agent_and_uv_on_al2023(tpl):
         assert "/etc/driftgate/deploy.env" in script
 
 
+@pytest.mark.parametrize("name", ["BuildHost", "ServingInstanceA", "ServingInstanceB"])
+def test_user_data_exports_uv_environment_before_install(tpl, name):
+    script = tpl["Resources"][name]["Properties"]["UserData"]["Fn::Base64"]["Fn::Sub"]
+    before_install, _ = script.split("https://astral.sh/uv/install.sh", 1)
+    assert "export HOME=/root" in before_install.splitlines()
+    assert "export UV_NO_MODIFY_PATH=1" in before_install.splitlines()
+
+
 def test_build_host_uses_network_exports_and_bootstraps_from_codecommit(tpl):
     host = by_type(tpl, "AWS::EC2::Instance")["BuildHost"]["Properties"]
     assert host["LaunchTemplate"] == {
