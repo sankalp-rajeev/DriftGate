@@ -16,4 +16,4 @@ ensure_llama_cpp llama-server llama-perplexity
 "$PY" -m gate.models --role reference --role ci --role F1 --role F2
 
 touch .bootstrap-done
-echo "DriftGate build host ready"
+echo "DriftGate build host READY"

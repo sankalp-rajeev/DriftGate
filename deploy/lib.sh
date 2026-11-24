@@ -49,11 +49,11 @@ ensure_llama_cpp() (
 
   cache_bucket="${DRIFTGATE_BUCKET:-${DRIFTGATE_BUNDLE_BUCKET:-}}"
   if [[ -n "$cache_bucket" ]]; then
-    cache_key="bin/llama.cpp/$lock_commit/al2023-x86_64.tar.gz"
+    cache_key="bin/llama.cpp/$lock_commit/al2023-x86_64-avx512.tar.gz"
     mkdir -p "$(dirname "$LLAMA_CPP_BIN")"
     work="$(mktemp -d "$(dirname "$LLAMA_CPP_BIN")/.llama-cache.XXXXXX")"
     trap 'rm -rf -- "$work"' EXIT
-    archive="$work/al2023-x86_64.tar.gz"
+    archive="$work/al2023-x86_64-avx512.tar.gz"
     if aws s3 cp --only-show-errors "s3://$cache_bucket/$cache_key" "$archive" &&
       "$PY" -c 'import sys, tarfile
 with tarfile.open(sys.argv[1], "r:gz") as archive:
@@ -64,8 +64,13 @@ with tarfile.open(sys.argv[1], "r:gz") as archive:
       return 0
     fi
     echo "No usable llama.cpp cache at $cache_key; building locally" >&2
-    # Lab instances can be on different CPUs, and shared libs must resolve after extraction.
-    cmake_options=(-DGGML_NATIVE=OFF -DCMAKE_BUILD_RPATH_USE_ORIGIN=ON)
+    # t3 Skylake-SP and Cascade Lake share base AVX-512, but not VNNI or later extensions.
+    # Keep the cache key in sync with this instruction set. Shared libs must relocate.
+    cmake_options=(
+      -DGGML_NATIVE=OFF -DGGML_AVX512=ON
+      -DGGML_AVX512_VBMI=OFF -DGGML_AVX512_VNNI=OFF -DGGML_AVX512_BF16=OFF
+      -DCMAKE_BUILD_RPATH_USE_ORIGIN=ON
+    )
   fi
 
   echo "Building llama.cpp $lock_commit (${targets[*]})" >&2

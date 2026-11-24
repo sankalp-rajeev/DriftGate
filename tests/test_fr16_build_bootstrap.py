@@ -14,7 +14,8 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 CACHE_URI = (
-    "s3://lab-cache/bin/llama.cpp/8c16babba5d4c66e28a19d86e572e4b04f522d52/al2023-x86_64.tar.gz"
+    "s3://lab-cache/bin/llama.cpp/8c16babba5d4c66e28a19d86e572e4b04f522d52/"
+    "al2023-x86_64-avx512.tar.gz"
 )
 
 
@@ -124,6 +125,7 @@ def test_bootstrap_builds_both_locked_tools_and_reuses_verified_models(host):
     checkout, log, names, published = host
     result = bootstrap(checkout)
     assert result.returncode == 0, result.stderr
+    assert "DriftGate build host READY" in result.stdout
     assert (checkout / ".bootstrap-done").exists()
     calls = log.read_text()
     assert "uv sync --frozen" in calls
@@ -232,6 +234,9 @@ fi
     else:
         assert "--target llama-server llama-perplexity" in calls
         assert "-DGGML_NATIVE=OFF" in calls
+        assert "-DGGML_AVX512=ON" in calls
+        for extension in ("VBMI", "VNNI", "BF16"):
+            assert f"-DGGML_AVX512_{extension}=OFF" in calls
         assert "--sse AES256" in calls
         with tarfile.open(cache_object) as archive:
             assert set(archive.getnames()) >= {
