@@ -5,6 +5,8 @@ cd "$(dirname "$0")/.."
 source deploy/lib.sh
 
 rm -f .bootstrap-done
+build_env="${DRIFTGATE_BUILD_ENV:-/etc/driftgate/build.env}"
+if [[ -f "$build_env" ]]; then load_env "$build_env"; fi
 load_env deploy/config.env
 unset PYTHONPATH
 

@@ -28,7 +28,7 @@ Policies use `${Name}` placeholders (listed in `controls.json`) for account id, 
 
 ## Design facts these policies rely on (PRD §6.8)
 
-- **Storage:** the bucket belongs to the persistent `driftgate-storage` stack (`deploy/cloudformation/storage.yaml`), not the per-session network stack. Prefixes: `models/`, `reference/`, `bundles/`, `build-logs/`, `runs/` (run records, indexes and the `runs/active.json` lock).
+- **Storage:** the bucket belongs to the persistent `driftgate-storage` stack (`deploy/cloudformation/storage.yaml`). Both EC2 roles can read and populate the shared `bin/llama.cpp/` cache. Other prefixes are `models/`, `reference/`, `bundles/`, `build-logs/`, and `runs/` (run records, indexes and the `runs/active.json` lock).
 - **Encrypted puts:** the bucket policy denies `PutObject` without an `x-amz-server-side-encryption` header, so every upload must send it. `orchestrator/run_record.py` sends `AES256`; build-host uploads must pass `--sse AES256`.
 - **Orchestrator and approval handler:** both run the same `Orchestrator` code. The approval handler calls `decide` in-process: approve calls CodeDeploy `CreateDeployment`; reject or timeout ends the run, which may start the queued push's build over SSM. Neither one invokes the other.
 - **Approval tokens:** `secrets.token_urlsafe(32)`, stored only as a SHA-256 hash, single use, rejected after the 1,800 s timeout. A sweep every 5 minutes rejects expired approvals. GET shows a confirm page and POST decides, so mail scanners can't approve.

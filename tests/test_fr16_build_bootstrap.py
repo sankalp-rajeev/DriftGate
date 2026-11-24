@@ -6,12 +6,16 @@ import os
 import shutil
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
 
 import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
+CACHE_URI = (
+    "s3://lab-cache/bin/llama.cpp/8c16babba5d4c66e28a19d86e572e4b04f522d52/al2023-x86_64.tar.gz"
+)
 
 
 def executable(path, script):
@@ -23,7 +27,7 @@ def executable(path, script):
 def host(tmp_path, monkeypatch):
     checkout = tmp_path / "driftgate"
     checkout.mkdir()
-    for name in ("deploy", "gate", "serving"):
+    for name in ("deploy", "gate", "observability", "serving"):
         shutil.copytree(ROOT / name, checkout / name)
     models = {
         "reference": "reference.gguf",
@@ -80,7 +84,11 @@ chmod +x .venv/bin/python
         """
 echo "cmake $*" >> "$CALLS"
 if [ "$1" = --build ]; then
-  shift 5
+  while [ "$1" != --target ]; do shift; done
+  shift
+  mkdir -p "$LLAMA_CPP_BIN"
+  printf 'shared library' > "$LLAMA_CPP_BIN/libllama.so.1"
+  ln -sf libllama.so.1 "$LLAMA_CPP_BIN/libllama.so"
   for target in "$@"; do
     printf '#!/bin/bash\necho "version: (commit 8c16babba)"\n' > "$LLAMA_CPP_BIN/$target"
     chmod +x "$LLAMA_CPP_BIN/$target"
@@ -89,10 +97,13 @@ fi
 """,
     )
     executable(commands / "aws", 'echo "unexpected AWS call" >&2\nexit 1\n')
+    monkeypatch.delenv("DRIFTGATE_BUCKET", raising=False)
+    monkeypatch.delenv("DRIFTGATE_BUNDLE_BUCKET", raising=False)
     for key, value in {
         "PATH": f"{commands}:{os.environ['PATH']}",
         "LLAMA_CPP_BIN": bin_dir,
         "DRIFTGATE_LLAMA_CPP_DIR": engine,
+        "DRIFTGATE_BUILD_ENV": tmp_path / "build.env",
         "TEST_PYTHON": sys.executable,
         "CALLS": log,
     }.items():
@@ -137,3 +148,95 @@ def test_bootstrap_rejects_corrupt_download_before_marking_host_ready(host):
     report = json.loads(result.stdout)
     assert report["artifacts"][0]["status"] == "mismatch"
     assert not (checkout / ".bootstrap-done").exists()
+
+
+@pytest.mark.parametrize(
+    ("entrypoint", "cache_state"),
+    [
+        ("build", "hit"),
+        ("build", "miss"),
+        ("build", "version-mismatch"),
+        ("serving", "hit"),
+        ("serving", "miss"),
+    ],
+)
+def test_instances_use_or_populate_the_binary_cache(
+    host, tmp_path, monkeypatch, entrypoint, cache_state
+):
+    checkout, log, _, _ = host
+    cache_object = tmp_path / "cached.tar.gz"
+    if cache_state != "miss":
+        cached_bin = tmp_path / "cached-bin"
+        cached_bin.mkdir()
+        (cached_bin / "libllama.so.1").write_text("cached shared library")
+        (cached_bin / "libllama.so").symlink_to("libllama.so.1")
+        executable(
+            cached_bin / "llama-server",
+            'test -f "$(dirname "$0")/libllama.so"\necho "version: (commit 8c16babba)"\n',
+        )
+        perplexity = "8c16babba" if cache_state == "hit" else "000000000"
+        executable(cached_bin / "llama-perplexity", f'echo "version: (commit {perplexity})"\n')
+        with tarfile.open(cache_object, "w:gz") as archive:
+            archive.add(cached_bin, arcname="build/bin")
+
+    commands = tmp_path / "commands"
+    executable(
+        commands / "aws",
+        f"""
+echo "aws $*" >> "$CALLS"
+src="${{@: -2:1}}"
+dest="${{@: -1}}"
+if [[ "$src" = "{CACHE_URI}" ]]; then
+  cp "{cache_object}" "$dest"
+elif [[ "$dest" = "{CACHE_URI}" && " $* " = *" --sse AES256 "* ]]; then
+  cp "$src" "{cache_object}"
+elif [[ "$src" = s3://lab-cache/reference/* ]]; then
+  exit 0
+else
+  exit 1
+fi
+""",
+    )
+    if entrypoint == "build":
+        (tmp_path / "build.env").write_text("DRIFTGATE_BUNDLE_BUCKET=lab-cache\n")
+        result = bootstrap(checkout)
+    else:
+        settings = tmp_path / "deploy.env"
+        settings.write_text("DRIFTGATE_BUCKET=lab-cache\n")
+        for key, value in {
+            "DRIFTGATE_INSTANCE_ENV": settings,
+            "DRIFTGATE_APP_DIR": checkout,
+            "DRIFTGATE_INSTANCE_SERVING_CONFIG": tmp_path / "serving.yaml",
+            "DRIFTGATE_INSTANCE_TYPE": "t3.large",
+            "DRIFTGATE_SYSTEMD": "0",
+        }.items():
+            monkeypatch.setenv(key, str(value))
+        config = checkout / "serving/config.yaml"
+        config.write_text(
+            yaml.safe_dump(yaml.safe_load(config.read_text()) | {"model": "reference.gguf"})
+        )
+        result = subprocess.run(
+            [str(checkout / "deploy/hooks/after_install.sh")],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    assert result.returncode == 0, result.stderr
+    calls = log.read_text()
+    assert f"aws s3 cp --only-show-errors {CACHE_URI}" in calls
+    bin_dir = tmp_path / "llama.cpp/build/bin"
+    assert (bin_dir / "libllama.so").is_symlink()
+    if cache_state == "hit":
+        assert "cmake" not in calls and "git " not in calls
+        assert (bin_dir / "libllama.so").read_text() == "cached shared library"
+    else:
+        assert "--target llama-server llama-perplexity" in calls
+        assert "-DGGML_NATIVE=OFF" in calls
+        assert "--sse AES256" in calls
+        with tarfile.open(cache_object) as archive:
+            assert set(archive.getnames()) >= {
+                "build/bin/llama-server",
+                "build/bin/llama-perplexity",
+                "build/bin/libllama.so",
+                "build/bin/libllama.so.1",
+            }

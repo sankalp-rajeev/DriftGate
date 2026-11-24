@@ -24,6 +24,11 @@ Use GitHub `main` after the Phase 0 PR is merged. The Lab repository defaults to
 5. Run `make orch-up APPROVAL_EMAIL=you@example.org` and confirm the SNS subscription
    email when prompted. Use `make lab-status` to check all stack and instance states.
 
+The build host and serving hooks share the llama.cpp cache in the storage bucket
+at `bin/llama.cpp/<locked commit>/al2023-x86_64.tar.gz`. The first cache miss
+builds both tools using common CPU instructions for the Lab hosts. For session 2,
+regenerate the reference measurement and D2 logits using that same Lab build.
+
 Before the first pipeline smoke run, prepare the reference on the approved baseline
 revision on the t3.large build host. From `/opt/driftgate`, export
 `LLAMA_CPP_BIN=/opt/llama.cpp/build/bin` and use

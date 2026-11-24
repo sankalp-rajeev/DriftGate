@@ -35,6 +35,12 @@
       ]
     },
     {
+      "Sid": "ReadWriteLlamaCppCache",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject"],
+      "Resource": "arn:aws:s3:::${ArtifactBucket}/bin/llama.cpp/*"
+    },
+    {
       "Sid": "WriteBundlesAndBuildLogs",
       "Effect": "Allow",
       "Action": "s3:PutObject",

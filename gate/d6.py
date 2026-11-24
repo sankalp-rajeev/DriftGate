@@ -25,7 +25,8 @@ def p95s(d3_run: list[dict]) -> dict:
 def metrics(reference: list[dict], candidate: list[dict]) -> dict:
     if error := detector_error(candidate):
         return error
-    ref, cand = p95s(reference), p95s(candidate)
+    # References can cover higher budget levels than the candidate.
+    ref, cand = p95s(reference[: len(candidate)]), p95s(candidate)
     return {
         "n_requests": len(candidate),
         "reference": ref,
