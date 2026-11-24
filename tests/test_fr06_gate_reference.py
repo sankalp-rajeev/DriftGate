@@ -3,6 +3,7 @@ reference/<model-sha256>/<config-hash>/<instance-type>/. Fake llama-server only.
 
 import copy
 import json
+from functools import partial
 from pathlib import Path
 
 import pytest
@@ -148,16 +149,34 @@ def test_reference_measures_and_stores_under_the_key_without_upload(tmp_path, mo
 
 def test_upload_only_with_explicit_flag(tmp_path, monkeypatch):
     calls = []
-    monkeypatch.setattr(ref, "upload", lambda local, uri: calls.append((local, uri)))
+
+    def run_aws(args, *, check):
+        assert check
+        calls.append(args)
+
+    monkeypatch.setattr(ref, "upload", partial(ref.upload, run=run_aws))
     g = _gate_config(tmp_path)
     with FakeLlama() as server:
         url = f"http://127.0.0.1:{server.port}"
         base = ["reference", "--gate-config", str(g), "--server", url, "--seed", "0"]
         base += ["--budget", "2", "--instance-type", "t3.large"]
         assert cli.main(base + ["--upload"]) == 2  # no S3 URI configured
+        assert cli.main(base + ["--s3-uri", "s3://bkt/"]) == 0
+        assert not calls
         assert cli.main(base + ["--upload", "--s3-uri", "s3://bkt/"]) == 0
     key = ref.reference_key(SERVING, "t3.large")
-    assert calls == [(tmp_path / key / "measurement.json", f"s3://bkt/{key}measurement.json")]
+    assert calls == [
+        [
+            "aws",
+            "s3",
+            "cp",
+            "--only-show-errors",
+            "--sse",
+            "AES256",
+            str(tmp_path / key / "measurement.json"),
+            f"s3://bkt/{key}measurement.json",
+        ]
+    ]
 
 
 def test_missing_reference_is_an_input_error(tmp_path):

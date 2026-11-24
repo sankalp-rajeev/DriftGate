@@ -38,6 +38,10 @@ reference from S3.
 The gate records verdicts in report mode until the t3.large calibration in Phase 2.
 The laptop study's thresholds are archived separately.
 
+The SSM agent writes Run Command output when `OutputS3BucketName` is set. Project
+code cannot set the SSE header on those uploads. Verify live in Phase 2 or 3 that
+SSM writes the command logs to the storage bucket under its encryption policy.
+
 ## End the session
 
 1. Finish the active pipeline run and collect the evidence you need. Pause further
