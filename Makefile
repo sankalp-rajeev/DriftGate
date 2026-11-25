@@ -1,6 +1,7 @@
 .DEFAULT_GOAL := help
 .PHONY: help setup test lint fmt models verify serve gate reference fault study study-status up down storage-up storage-down obs-up obs-down orchestrator-zip unlock
 .PHONY: codecommit-push cd-up cd-down orch-up session-down lab-status
+.PHONY: demo-push demo-reset session-up pipeline-status
 
 # Keep the project venv isolated from any PYTHONPATH set by the shell (e.g. a sourced ROS setup).
 STOP_AT ?=
@@ -83,6 +84,23 @@ storage-down: ## Delete the storage stack; empty every object version first (cal
 
 codecommit-push: ## Push local main to the Lab repository via git-remote-codecommit
 	git push "codecommit::$(AWS_REGION)://$(REPOSITORY_NAME)" main:main
+
+demo-push: ## Push a clean or injected-fault demo commit to CodeCommit (F=CLEAN|F1|F9|...; Lab only)
+	@bash scripts/demo_push.sh "$(F)"
+
+demo-reset: ## Push the exact origin/main tree to CodeCommit, preserving its history (Lab only)
+	@bash scripts/demo_push.sh RESET
+
+session-up: ## Start session stacks and wait up to 30 min for build host READY (APPROVAL_EMAIL required; Lab only)
+	+@APPROVAL_EMAIL="$(APPROVAL_EMAIL)" AWS_REGION="$(AWS_REGION)" STACK_NAME="$(STACK_NAME)" \
+		CD_STACK_NAME="$(CD_STACK_NAME)" ORCH_STACK_NAME="$(ORCH_STACK_NAME)" \
+		STORAGE_STACK_NAME="$(STORAGE_STACK_NAME)" REPOSITORY_NAME="$(REPOSITORY_NAME)" \
+		MAKE="$(MAKE)" bash scripts/lab_session_up.sh
+
+pipeline-status: ## Print the newest pipeline run, stages, approval, deployment and build log URI (Lab only)
+	@set -eu; bucket="$$($(LAB_BUCKET))"; \
+	test -n "$$bucket" && test "$$bucket" != None; \
+	uv run python -m orchestrator.status --bucket "$$bucket" --region "$(AWS_REGION)"
 
 cd-up: ## Create or update the CodeDeploy stack and the three EC2 instances
 	@set -eu; bucket="$$($(LAB_BUCKET))"; account="$$($(LAB_ACCOUNT))"; \

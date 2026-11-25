@@ -222,12 +222,13 @@ def test_codedeploy_rejecting_a_deployment_ends_run_and_releases_lock(pipeline):
     assert read_record(pipeline["s3"], holder)["trigger"]["commit_id"] == C3
 
 
-def test_build_command_is_exactly_prd_6_8(pipeline):
+def test_build_command_sets_ssm_environment_before_prd_build(pipeline):
     run_id = first_run(pipeline)
     [cmd] = ssm_commands()
     assert cmd["Parameters"]["commands"] == [
+        "export HOME=/root PATH=/usr/local/bin:$PATH",
         f"cd /opt/driftgate && git fetch && git checkout {COMMIT} && "
-        f"deploy/build.sh --commit {COMMIT} --run-id {run_id}"
+        f"deploy/build.sh --commit {COMMIT} --run-id {run_id}",
     ]
 
 

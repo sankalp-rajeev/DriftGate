@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 @pytest.fixture
 def lab(tmp_path):
     shutil.copy(ROOT / "Makefile", tmp_path)
+    shutil.copytree(ROOT / "scripts", tmp_path / "scripts")
     log = tmp_path / "calls"
     env = os.environ | {"PATH": f"{tmp_path}:{os.environ['PATH']}", "CALLS": str(log)}
     env.pop("APPROVAL_EMAIL", None)
@@ -50,6 +51,13 @@ esac
         return result, log.read_text().splitlines()
 
     return run
+
+
+def test_session_up_requires_email_before_any_external_action(lab):
+    result, calls = lab("session-up")
+    assert result.returncode != 0
+    assert "APPROVAL_EMAIL" in result.stderr
+    assert calls == []
 
 
 def test_session_down_waits_for_codedeploy_before_deleting_network(lab):
@@ -132,3 +140,10 @@ def test_lab_status_lists_stack_status_and_project_instance_states(lab):
     assert calls[1].startswith("aws ec2 describe-instances")
     assert "Name=tag:Project,Values=driftgate" in calls[1]
     assert "State.Name" in calls[1]
+
+
+def test_pipeline_status_resolves_the_storage_bucket_and_region(lab):
+    result, calls = lab("pipeline-status", "STORAGE_STACK_NAME=storage-example")
+    assert result.returncode == 0, result.stderr
+    assert "--stack-name storage-example" in calls[0]
+    assert calls[1] == "uv run python -m orchestrator.status --bucket lab-bucket --region us-east-1"

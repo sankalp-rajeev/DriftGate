@@ -14,6 +14,7 @@ uv sync --frozen
 PY=.venv/bin/python
 ensure_llama_cpp llama-server llama-perplexity
 "$PY" -m gate.models --role reference --role ci --role F1 --role F2
+ensure_reference
 
 touch .bootstrap-done
 echo "DriftGate build host READY"

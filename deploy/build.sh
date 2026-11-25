@@ -53,6 +53,7 @@ unset PYTHONPATH
 OUT="${OUT:-runs/build-$RUN_ID}"
 STEPS="${DRIFTGATE_BUILD_STEPS-tests manifest d1 d2 package}"
 MANIFEST="${DRIFTGATE_MANIFEST:-serving/manifest.json}"
+PY=.venv/bin/python
 mkdir -p "$OUT"
 
 STEP_JSON=()
@@ -105,7 +106,8 @@ for step in $STEPS; do
       uv run python -m gate.manifest verify --config "$CONFIG" --manifest "$MANIFEST" ;;
     d1) run_step d1 "$OUT/d1.json" uv run python -m gate.telemetry span D1 -- \
       uv run python -m gate.d1 --config "$CONFIG" --report-dir "$OUT" ;;
-    d2) run_step d2 "$OUT/d2.json" uv run python -m gate.telemetry span D2 -- \
+    d2) run_step reference "$OUT/reference.log" ensure_reference
+      run_step d2 "$OUT/d2.json" uv run python -m gate.telemetry span D2 -- \
       uv run python -m gate.d2 run --config "$CONFIG" ;;
     package) run_step package "$OUT/package.json" \
       uv run python deploy/package_bundle.py --commit "$COMMIT" --out "$OUT" ;;

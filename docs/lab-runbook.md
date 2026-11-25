@@ -1,7 +1,7 @@
 # Learner Lab session runbook
 
 Run these commands in the Learner Lab with current session credentials for `us-east-1`.
-Use GitHub `main` after the Phase 0 PR is merged. The Lab repository defaults to
+Use GitHub `main` after the Phase 3+4 prep PR is merged. The Lab repository defaults to
 `driftgate`; if it has a different name, set the same `REPOSITORY_NAME` for
 `codecommit-push`, `cd-up` and `orch-up`.
 
@@ -53,8 +53,10 @@ sudo journalctl -u driftgate-reference --no-pager
 
 When the job completes, copy `measurement.json` and `d2_base.kld` to the S3 reference key
 with `aws s3 cp --sse AES256`. In subsequent sessions, restore the pinned D2 logits to
-the build host's local reference directory before a build. The serving hooks fetch the
-reference from S3.
+the build host's local reference directory before a build. Bootstrap, the build's D2 step
+and AfterInstall now restore the baseline key automatically if either file is missing.
+They reuse the local pair when both files exist. An incomplete S3 reference fails startup
+or the build before D2, so check that both objects are present before session 3.
 
 The committed `gate/thresholds.json` enables enforce mode at L1: D2 mean KLD 0,
 D3 1 minus agreement 0, D5 accuracy drop 0, and D6 p95 ITL ratio 1.37.
@@ -66,6 +68,67 @@ study's original thresholds are archived separately.
 The SSM agent writes Run Command output when `OutputS3BucketName` is set. Project
 code cannot set the SSE header on those uploads. Verify live in Phase 2 or 3 that
 SSM writes the command logs to the storage bucket under its encryption policy.
+
+## Session 3: pipeline and rollback evidence
+
+1. Load the fresh Lab credentials, update the local checkout to merged GitHub `main`,
+   and run `make session-up APPROVAL_EMAIL=you@example.org`. Persistent storage and
+   the session-2 reference must already exist. The `codecommit` Git remote must point
+   to the Lab repository with working credentials. The command checks STS, fetches
+   and pushes `origin/main` to CodeCommit, runs `make up`, `make cd-up`, `make orch-up`
+   in order, then waits up to 30 minutes for the build host's bootstrap marker via
+   SSM. It prints the new ALB URL. If it times out, review
+   `/var/log/driftgate-bootstrap.log` through SSM; stacks remain up for inspection.
+   All remote READY commands are base64 encoded before submission to SSM.
+2. Confirm the SNS subscription email. `make pipeline-status` prints the newest
+   run's id, commit, stage statuses and timestamps, approval state, deployment id
+   and S3 build log URI. Wait for any startup push run to finish before the first
+   demo; approve it if needed. Each run's approval email is separate from the SNS
+   subscription confirmation.
+3. Run `make demo-push F=CLEAN`. Follow `make pipeline-status`, approve the run's
+   SNS link when Build passes, and wait for a successful deployment. Verify
+   `curl -f http://<ALB DNS>/health`. Save the printed commit id, run record and
+   deployment id as the last good revision evidence.
+4. Run `make demo-push F=F1`. Capture the D2 build failure and build log URI from
+   `make pipeline-status`; confirm the run ends before Approval/Deploy and the
+   ALB still serves the clean revision. Wait for the run to finish.
+5. Run `make demo-push F=F9`. Approve if Build passes, then capture ValidateService,
+   the gate verdict and the deployment outcome. Check whether the latency ratio
+   exceeds the frozen 1.37 threshold. If it does not, record the null result as
+   required by the session-2 deviation; do not change the threshold. If it fails,
+   capture CodeDeploy's rollback deployment id and verify recovery at the ALB.
+6. Alarm drill: start another `make demo-push F=CLEAN`, approve it, and wait until
+   CodeDeploy is actively deploying. Force the configured alarm while that
+   deployment is in progress:
+
+   ```sh
+   aws cloudwatch set-alarm-state --region us-east-1 \
+     --alarm-name driftgate-serving-gate-score --state-value ALARM \
+     --state-reason 'Session 3 rollback drill'
+   ```
+
+   Capture `DEPLOYMENT_STOP_ON_ALARM`, the automatic rollback deployment and the
+   CloudWatch dashboard. Confirm the last good revision serves again. Let the
+   metric evaluation restore OK, or clear the drill state with the same command
+   using `--state-value OK --state-reason 'Session 3 drill complete'`, and verify
+   the alarm is OK before another deployment.
+7. Run `make demo-reset`. It pushes a commit whose tree equals `origin/main`
+   exactly. Follow that run to completion (including approval if requested),
+   then check the ALB. Collect the evidence before teardown.
+8. Run `make session-down`, check `make lab-status`, then end the Lab session as
+   described below. `session-up` never tears resources down.
+
+Demo commands use Git plumbing with a temporary index. They fetch `origin/main`
+for the base tree and use the current `codecommit/main` as the new commit's parent,
+then push normally. CLEAN appends a UTC timestamped line to `docs/demo-log.md`;
+fault pushes overlay only the injector's `serving/` files from that clean tree.
+Faults supported by `python -m faults.inject` work here (F8 is study-runner-only).
+Every command prints its new commit id and leaves the local branch, index and
+working files intact. A concurrent CodeCommit push is rejected; rerun after
+inspecting it. No command force-pushes. After demos, CodeCommit has its own
+history, even after `demo-reset`; a later `session-up` seed push may be rejected
+as non-fast-forward. Keep that history and use `demo-reset` to restore the
+GitHub tree; do not force-push to seed it again.
 
 ## End the session
 
