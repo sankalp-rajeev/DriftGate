@@ -10,6 +10,27 @@ load_env() {
   done <"$1"
 }
 
+# Restore the baseline for this instance type, never the candidate's reference.
+# No bucket means a local run: the caller is responsible for its local reference.
+ensure_reference() {
+  local bucket="${DRIFTGATE_BUCKET:-${DRIFTGATE_BUNDLE_BUCKET:-}}"
+  local fields ref_key ref_dir
+  [[ -n "$bucket" ]] || return 0
+  fields="$("$PY" -m gate reference --print-key | "$PY" -c \
+    'import json, shlex, sys; d = json.load(sys.stdin); print("ref_key=%s ref_dir=%s" % (shlex.quote(d["key"]), shlex.quote(d["local_dir"])))')" || return 1
+  eval "$fields"
+  if [[ -f "$ref_dir/measurement.json" && -f "$ref_dir/d2_base.kld" ]]; then
+    return 0
+  fi
+  mkdir -p "$ref_dir" || return 1
+  aws s3 cp --only-show-errors --recursive "s3://$bucket/$ref_key" "$ref_dir" || return 1
+  if [[ ! -f "$ref_dir/measurement.json" || ! -f "$ref_dir/d2_base.kld" ]]; then
+    echo "Incomplete baseline reference at $ref_dir (measurement.json and d2_base.kld required)" >&2
+    return 1
+  fi
+  echo "Baseline reference fetched from $ref_key to $ref_dir" >&2
+}
+
 # llama.cpp prints an abbreviated Git commit in --version.
 llama_cpp_matches() {
   local bin_dir="$1" commit="$2" target version built

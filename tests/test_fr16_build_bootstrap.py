@@ -193,7 +193,8 @@ if [[ "$src" = "{CACHE_URI}" ]]; then
 elif [[ "$dest" = "{CACHE_URI}" && " $* " = *" --sse AES256 "* ]]; then
   cp "$src" "{cache_object}"
 elif [[ "$src" = s3://lab-cache/reference/* ]]; then
-  exit 0
+  mkdir -p "$dest"
+  touch "$dest/measurement.json" "$dest/d2_base.kld"
 else
   exit 1
 fi
@@ -226,6 +227,11 @@ fi
     assert result.returncode == 0, result.stderr
     calls = log.read_text()
     assert f"aws s3 cp --only-show-errors {CACHE_URI}" in calls
+    assert "aws s3 cp --only-show-errors --recursive s3://lab-cache/reference/" in calls
+    refs = list((checkout / "artifacts/reference").glob("*/*/*"))
+    assert len(refs) == 1
+    assert (refs[0] / "measurement.json").is_file()
+    assert (refs[0] / "d2_base.kld").is_file()
     bin_dir = tmp_path / "llama.cpp/build/bin"
     assert (bin_dir / "libllama.so").is_symlink()
     if cache_state == "hit":
@@ -245,3 +251,65 @@ fi
                 "build/bin/libllama.so",
                 "build/bin/libllama.so.1",
             }
+
+
+@pytest.mark.parametrize("download", ["complete", "incomplete", "error"])
+def test_build_restores_reference_before_d2_and_stops_on_restore_failure(
+    host, tmp_path, monkeypatch, download
+):
+    checkout, log, _, _ = host
+    assert bootstrap(checkout).returncode == 0
+    commands = tmp_path / "commands"
+    executable(commands / "git", "echo abcdef0123456789\n")
+    executable(
+        commands / "aws",
+        f'''
+echo "aws $*" >> "$CALLS"
+if [[ "{download}" = error ]]; then exit 1; fi
+dest="${{@: -1}}"
+touch "$dest/measurement.json"
+if [[ "{download}" = complete ]]; then touch "$dest/d2_base.kld"; fi
+''',
+    )
+    executable(
+        commands / "uv",
+        """
+ref="$(.venv/bin/python -m gate reference --print-key | .venv/bin/python -c \
+  'import json,sys; print(json.load(sys.stdin)["local_dir"])')"
+test -f "$ref/measurement.json" && test -f "$ref/d2_base.kld"
+echo "D2 ran with reference" >> "$CALLS"
+echo '{}'
+""",
+    )
+    monkeypatch.setenv("DRIFTGATE_BUNDLE_BUCKET", "lab-cache")
+    monkeypatch.setenv("DRIFTGATE_BUILD_STEPS", "d2")
+    log.write_text("")
+    result = subprocess.run(
+        [
+            str(checkout / "deploy/build.sh"),
+            "--commit",
+            "abcdef0123456789",
+            "--run-id",
+            "restore",
+            "--out",
+            str(tmp_path / "out"),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    report = json.loads((tmp_path / "out/build.json").read_text())
+    calls = log.read_text()
+    if download == "complete":
+        assert result.returncode == 0, result.stderr
+        assert report["status"] == "passed"
+        assert calls.index("s3 cp") < calls.index("D2 ran with reference")
+        # A second build reuses both local files.
+        log.write_text("")
+        second = subprocess.run(result.args, capture_output=True, text=True, timeout=30)
+        assert second.returncode == 0, second.stderr
+        assert log.read_text().splitlines() == ["D2 ran with reference"]
+    else:
+        assert result.returncode != 0
+        assert report["failed_step"] == "reference"
+        assert "D2 ran" not in calls

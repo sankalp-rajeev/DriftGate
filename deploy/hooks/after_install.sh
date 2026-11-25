@@ -21,15 +21,7 @@ PYEOF
 "$PY" -m gate.models --role "$role"
 log "model for role $role present and matches the manifest"
 
-# Reference measurement and D2 reference logits for the gate, from the storage bucket. The key is
-# always the baseline's (gate/baseline.yaml) on this instance type (IMDSv2), never the candidate's.
-if [ -n "$DRIFTGATE_BUCKET" ]; then
-  eval "$("$PY" -m gate reference --print-key | "$PY" -c \
-    'import json, shlex, sys; d = json.load(sys.stdin); print("ref_key=%s ref_dir=%s" % (shlex.quote(d["key"]), shlex.quote(d["local_dir"])))')"
-  mkdir -p "$ref_dir"
-  aws s3 cp --only-show-errors --recursive "s3://$DRIFTGATE_BUCKET/$ref_key" "$ref_dir"
-  log "baseline reference fetched from $ref_key to $ref_dir"
-fi
+ensure_reference
 
 # Instance serving config: the revision's config with the instance listen address.
 "$PY" - "$DRIFTGATE_SERVING_CONFIG" "$DRIFTGATE_INSTANCE_SERVING_CONFIG" <<PYEOF
