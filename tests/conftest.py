@@ -7,6 +7,20 @@ from orchestrator.config import load_config
 from orchestrator.handler import Orchestrator
 
 
+@pytest.fixture(autouse=True)
+def isolate_deploy_environment(monkeypatch, tmp_path):
+    """Keep host deployment settings out of tests; test fixtures can opt in explicitly."""
+    monkeypatch.setenv("DRIFTGATE_BUILD_ENV", str(tmp_path / "no-build.env"))
+    monkeypatch.setenv("DRIFTGATE_INSTANCE_ENV", str(tmp_path / "no-instance.env"))
+    for key in (
+        "DRIFTGATE_UPLOAD",
+        "DRIFTGATE_BUCKET",
+        "DRIFTGATE_BUNDLE_BUCKET",
+        "DRIFTGATE_FORCE_FAIL",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+
 @pytest.fixture
 def pipeline(monkeypatch):
     """Mocked Lab account: run bucket, CodeDeploy group, approval topic and a running build
