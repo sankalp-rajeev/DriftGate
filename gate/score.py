@@ -24,7 +24,9 @@ kind "upper": D6 thresholds are ratios, not milliseconds. D5's paired drop is av
 `accuracy_drop` (reference minus candidate accuracy) for an "upper" rule.
 
 Detector score = the maximum of its rules' scores. Gate score = the maximum over detectors that
-have rules. The verdict fails when the gate score is above 1.
+have rules. Score only detectors supplied by the current stage: D2 on the build host,
+D3/D5/D6 in ValidateService. No applicable rules is an input error. The verdict fails when
+the gate score is above 1.
 """
 
 from __future__ import annotations
@@ -84,6 +86,8 @@ def score(dets: dict, thresholds: dict) -> dict:
     """Per-rule results, per-detector scores and the gate score."""
     results = []
     for r in validate(thresholds):
+        if r["detector"] not in dets:
+            continue
         if dets[r["detector"]].get("status") == "error":
             results.append(
                 r
@@ -98,6 +102,8 @@ def score(dets: dict, thresholds: dict) -> dict:
         observed = _lookup(dets[r["detector"]], r["metric"])
         s = rule_score(observed, r["kind"], r["value"])
         results.append(r | {"observed": observed, "score": s, "ok": s <= 1})
+    if not results:
+        raise ValueError("thresholds file has no rules for the measured detectors")
     per_detector: dict[str, float] = {
         d: ZERO_MARGIN_SCORE for d, result in dets.items() if result.get("status") == "error"
     }

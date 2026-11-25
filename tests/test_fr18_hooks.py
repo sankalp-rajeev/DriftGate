@@ -3,7 +3,7 @@ non-zero on gate failure. PRD 6.8: report mode until gate/thresholds.json exists
 DRIFTGATE_FORCE_FAIL=1 fails the hook in either mode.
 
 The hooks run here against a fake llama-server (tests/fake_llama.py), with the app directory set
-to this checkout. No thresholds file is created in the repo; enforce uses a temporary one.
+to this checkout. Tests cover the committed Lab thresholds and temporary report-mode configs.
 """
 
 import json
@@ -17,6 +17,7 @@ import yaml
 from fake_llama import FakeLlama
 
 from gate import cli
+from gate.prompts import mmlu_prompt
 
 ROOT = Path(__file__).resolve().parents[1]
 HOOKS = ROOT / "deploy" / "hooks"
@@ -68,8 +69,34 @@ def test_hook_scripts_parse():
         subprocess.run(["bash", "-n", str(path)], check=True)
 
 
-def test_no_thresholds_file_committed():
-    assert not (ROOT / "gate" / "thresholds.json").exists()
+SESSION2_VERDICTS = sorted(
+    (ROOT / "results/2026-11-24-lab-session2").glob("deploy-*/*/verdict.json")
+)
+
+
+def test_lab_thresholds_match_the_authorized_l1_profile():
+    thresholds = json.loads((ROOT / "gate/thresholds.json").read_text())
+    assert thresholds == {
+        "schema": cli.THRESHOLDS_SCHEMA,
+        "rules": [
+            {"detector": "D2", "metric": "mean_kld", "kind": "upper", "value": 0.0},
+            {"detector": "D3", "metric": "mean_agreement_share", "kind": "agreement", "value": 1.0},
+            {"detector": "D5", "metric": "accuracy_drop", "kind": "upper", "value": 0.0},
+            {"detector": "D6", "metric": "ratio.p95_itl_ms", "kind": "upper", "value": 1.37},
+        ],
+    }
+    assert len(SESSION2_VERDICTS) == 6
+
+
+@pytest.mark.parametrize("verdict_file", SESSION2_VERDICTS, ids=lambda p: str(p.relative_to(ROOT)))
+def test_session2_verdict_passes_with_lab_enforcement(verdict_file):
+    recorded = json.loads(verdict_file.read_text())
+    assert recorded["decision"]["mode"] == "report"
+    decision = cli.decide(recorded["detectors"], "auto", ROOT / "gate/thresholds.json", env={})
+    assert decision["mode"] == "enforce"
+    assert decision["passed"] is True
+    assert decision["exit_code"] == 0
+    assert set(decision["scores"]) == {"D3", "D5", "D6"}
 
 
 @pytest.fixture
@@ -112,6 +139,7 @@ def sandbox(tmp_path):
 
     return {
         "env": env,
+        "gate_config": gate_cfg_path,
         "measure_reference": measure_reference,
         "thresholds": Path(gate_cfg["thresholds"]),
         "verdict": run_dir / "d-TEST" / "verdict.json",
@@ -122,6 +150,80 @@ def run_hook(name, env):
     return subprocess.run(
         ["bash", str(HOOKS / name)], env=env, capture_output=True, text=True, timeout=120
     )
+
+
+class Session2Server(FakeLlama):
+    """HTTP responses consistent with a saved verdict's aggregate accuracy and p95s.
+
+    The archive has verdicts, not raw completions. Identical synthetic token streams and
+    a compatible set of correct answers exercise the real measurement/compare/hook path.
+    The exact archived detector blocks are scored separately above.
+    """
+
+    def __init__(self, recorded, side, fault=None):
+        super().__init__(shift=7 if fault == "D3" else 0)
+        self.latency = recorded["detectors"]["D6"][side]
+        self.fault = fault
+        panel = [
+            json.loads(line)
+            for line in (ROOT / "gate/data/d5_panel.jsonl").read_text().splitlines()
+        ]
+        metrics = recorded["detectors"]["D5"]
+        correct = round(metrics[f"{side}_accuracy"] * metrics["n_items"])
+        if fault == "D5":
+            correct -= 1
+        self.answers = {
+            f"<|user|>{mmlu_prompt(item)}<|assistant|>": (
+                item["answer"] if i < correct else "ABCD"[("ABCD".index(item["answer"]) + 1) % 4]
+            )
+            for i, item in enumerate(panel[: metrics["n_items"]])
+        }
+
+    def completion(self, req):
+        response = super().completion(req)
+        if req["n_predict"] == 1:
+            response["content"] = self.answers[req["prompt"]]
+        response["timings"]["prompt_ms"] = self.latency["p95_ttft_ms"]
+        response["timings"]["predicted_ms"] = (
+            self.latency["p95_itl_ms"]
+            * response["timings"]["predicted_n"]
+            * (2 if self.fault == "D6" else 1)
+        )
+        return response
+
+
+@pytest.mark.parametrize("verdict_file", SESSION2_VERDICTS, ids=lambda p: str(p.relative_to(ROOT)))
+def test_validate_service_passes_session2_statistics(sandbox, verdict_file):
+    recorded = json.loads(verdict_file.read_text())
+    sandbox["thresholds"].write_bytes((ROOT / "gate/thresholds.json").read_bytes())
+    with Session2Server(recorded, "reference") as reference:
+        sandbox["measure_reference"](reference.port)
+    with Session2Server(recorded, "candidate") as candidate:
+        result = run_hook("validate_service.sh", sandbox["env"](candidate.port))
+    assert result.returncode == 0, result.stderr
+    actual = json.loads(sandbox["verdict"].read_text())
+    assert actual["decision"]["mode"] == "enforce"
+    assert actual["decision"]["passed"] is True
+    assert actual["detectors"]["D3"]["mean_agreement_share"] == 1.0
+    assert actual["detectors"]["D3"]["mean_approx_kl"] == 0.0
+    assert actual["detectors"]["D5"] == recorded["detectors"]["D5"]
+    assert actual["detectors"]["D6"]["ratio"] == pytest.approx(recorded["detectors"]["D6"]["ratio"])
+
+
+@pytest.mark.parametrize("detector", ["D3", "D5", "D6"])
+def test_validate_service_fails_if_any_lab_detector_exceeds_threshold(sandbox, detector):
+    recorded = json.loads(SESSION2_VERDICTS[0].read_text())
+    sandbox["thresholds"].write_bytes((ROOT / "gate/thresholds.json").read_bytes())
+    with Session2Server(recorded, "reference") as reference:
+        sandbox["measure_reference"](reference.port)
+    with Session2Server(recorded, "candidate", fault=detector) as candidate:
+        result = run_hook("validate_service.sh", sandbox["env"](candidate.port))
+    assert result.returncode == 1, result.stderr
+    decision = json.loads(sandbox["verdict"].read_text())["decision"]
+    assert decision["mode"] == "enforce"
+    assert decision["passed"] is False
+    assert decision["scores"][detector] > 1
+    assert all(value <= 1 for key, value in decision["scores"].items() if key != detector)
 
 
 def write_thresholds(path):

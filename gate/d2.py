@@ -8,10 +8,11 @@
   run   on the served model: `--kl-divergence-base <file> --kl-divergence` and parse mean KL,
         99th-percentile KL and same-top-token % from the tool's summary
 
-Measurement only: no threshold here (A/A calibration, FR-12). Output is JSON (`driftgate.d2/1`).
+Output is JSON (`driftgate.d2/1`). The run command applies the configured gate mode and the
+D2 rule from gate/thresholds.json; base only generates reference logits.
 Always `--threads 2` (gate config `d2.threads`, PRD Section 6.8), for the reference logits and
 for every candidate, on every machine, whatever the serving config says.
-Exit 0 on a completed measurement, 2 if the tool fails.
+Exit 0 on pass or report mode, 1 on an enforced D2 failure, 2 if the tool fails.
 
 CLI: `python -m gate.d2 {base,run} [--config serving/config.yaml] [--instance-type T]
       [--reference-key KEY] [--out d2.json]`
@@ -27,6 +28,7 @@ import sys
 from pathlib import Path
 
 from gate import reference as ref_store
+from gate.cli import decide
 from gate.manifest import DEFAULT_CONFIG, load_yaml, sha256_file
 from gate.serve import llama_bin_dir
 
@@ -143,13 +145,17 @@ def main(argv: list[str] | None = None) -> int:
     ):
         p.error("serving config is not the baseline in gate/baseline.yaml; base logits not written")
     result = base(serving, d2, path) if args.action == "base" else run(serving, d2, path)
+    if args.action == "run":
+        result["decision"] = decide(
+            {"D2": result["metrics"]}, gate_config["mode"], Path(gate_config["thresholds"])
+        )
     text = json.dumps(result, indent=2) + "\n"
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(text)
     else:
         sys.stdout.write(text)
-    return 0
+    return result.get("decision", {}).get("exit_code", 0)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,185 @@
+16:25:41 === preflight
+arn:aws:sts::572483634573:assumed-role/voclabs/user5430119=Sankalp_Rajeev
+16:25:42 revision 6c6732ba1d0e11a2572ae7330224602bffe253bd (6c6732b T-21: Cache Lab binaries and record session one results (#72))
+remote: Validating objects: 0%        remote: Validating objects: 100%        
+16:25:46 bucket driftgate-artifacts-572483634573-us-east-1; results in /home/rajee/driftgate-lab-runs/session2-20261124-1625
+16:25:46 === make up
+aws cloudformation deploy --region us-east-1 --stack-name driftgate-net --template-file deploy/cloudformation/network.yaml --parameter-overrides file://deploy/cloudformation/network-params.json --tags Project=driftgate --no-fail-on-empty-changeset
+
+Waiting for changeset to be created..
+Waiting for stack create/update to complete
+Successfully created/updated stack - driftgate-net
+16:28:28 === make cd-up
+
+Waiting for changeset to be created..
+Waiting for stack create/update to complete
+Successfully created/updated stack - driftgate-cd
+16:30:12 build host i-010c963b5365fd370, serving i-0f50eb6bf39419347 i-094106129f457e2cf
+16:31:03 all three instances online in SSM
+16:31:03 === waiting for build host bootstrap (compile + models, ~20 min)
+16:31:10 bootstrap: status: running  Downloaded cfn-lint 	 
+16:32:19 bootstrap: status: running [  6%] Building CXX object ggml/src/CMakeFiles/ggml-base.dir/ggml-backend.cpp.o 	 
+16:33:29 bootstrap: status: running [ 18%] Building CXX object ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/ops.cpp.o 	 
+16:34:38 bootstrap: status: running [ 31%] Building CXX object src/CMakeFiles/llama.dir/llama-arch.cpp.o 	 
+16:35:47 bootstrap: status: running [ 45%] Building CXX object src/CMakeFiles/llama.dir/llama-model.cpp.o 	 
+16:36:56 bootstrap: status: running [ 52%] Building CXX object common/CMakeFiles/llama-common.dir/parsers/functionary-v3-2.cpp.o 	 
+16:38:06 bootstrap: status: running [ 61%] Building CXX object common/CMakeFiles/llama-common.dir/parsers/lfm2.cpp.o 	 
+16:39:15 bootstrap: status: running [ 68%] Building CXX object tools/mtmd/CMakeFiles/mtmd.dir/mtmd-subcontext.cpp.o 	 
+16:40:24 bootstrap: status: running [ 72%] Building CXX object common/CMakeFiles/llama-common.dir/fit.cpp.o 	 
+16:41:35 bootstrap: status: running [ 86%] Building CXX object common/CMakeFiles/llama-common.dir/jinja/string.cpp.o 	 
+16:42:44 bootstrap: status: running [ 93%] Building CXX object tools/server/CMakeFiles/server-context.dir/server-stream.cpp.o 	 
+16:43:54 bootstrap: status: running [ 97%] Building CXX object tools/server/CMakeFiles/llama-server-impl.dir/server-models-sched.cpp.o 	 
+16:45:03 bootstrap: READY status: done DriftGate build host READY 	 
+[ 38%] Building CXX object src/CMakeFiles/llama.dir/llama-kv-cache-msa.cpp.o
+[ 40%] Building CXX object src/CMakeFiles/llama.dir/llama-kv-cache-dsv4.cpp.o
+[ 40%] Building CXX object src/CMakeFiles/llama.dir/llama-moe-cache.cpp.o
+[ 75%] Building CXX object common/CMakeFiles/llama-common.dir/hf-cache.cpp.o
+[ 77%] Building CXX object common/CMakeFiles/llama-common.dir/ngram-cache.cpp.o
+2026-11-24 21:44:00   11470231 bin/llama.cpp/8c16babba5d4c66e28a19d86e572e4b04f522d52/al2023-x86_64-avx512.tar.gz
+	
+16:45:10 === regenerating the t3.large reference with the cached generic build
+	Running as unit: driftgate-ref.service
+
+16:46:27 reference: server healthy after 8s requests=8 active 	 
+16:47:37 reference: server healthy after 8s requests=17 active 	 
+16:48:47 reference: server healthy after 8s requests=26 active 	 
+16:49:57 reference: server healthy after 8s requests=35 active 	 
+16:51:07 reference: server healthy after 8s requests=45 active 	 
+16:52:16 reference: server healthy after 8s requests=56 active 	 
+16:53:26 reference: server healthy after 8s requests=65 active 	 
+16:54:35 reference: server healthy after 8s requests=77 active 	 
+16:55:45 reference: server healthy after 8s requests=86 active 	 
+16:56:55 reference: server healthy after 8s requests=95 active 	 
+16:58:04 reference: server healthy after 8s requests=102 active 	 
+16:59:14 reference: server healthy after 8s requests=111 active 	 
+17:00:23 reference: server healthy after 8s requests=119 active 	 
+17:01:34 reference: server healthy after 8s requests=126 active 	 
+17:02:44 reference: measurement done after 993s requests=128 active 	 
+17:03:54 reference: REFERENCE DONE key=reference/d7efb072e7724d25048a4fda0a3e10b04bdef5d06b1403a1c93bd9f1240a63c8/5c1277b1db8a99d27b529ae10370372e4da22ad6134478f18dcd8aae19d75d49/t3.large/ total=1115s requests=128 inacti
+17:04:01 === packaging 6c6732ba1d0e11a2572ae7330224602bffe253bd
+{"bundle": "/home/rajee/driftgate-lab-runs/session2-20261124-1625/bundle/bundles/6c6732ba1d0e11a2572ae7330224602bffe253bd.zip", "files": 411, "appspec": true}
+17:04:19 === deploy 1/3: d-FUPLUK70N
+17:05:22 deploy 1: InProgress	0	1	0
+17:06:25 deploy 1: InProgress	0	1	0
+17:07:29 deploy 1: InProgress	0	1	0
+17:08:31 deploy 1: InProgress	0	1	0
+17:09:34 deploy 1: InProgress	0	1	0
+17:10:37 deploy 1: InProgress	0	1	0
+17:11:40 deploy 1: InProgress	0	1	0
+17:12:44 deploy 1: InProgress	0	1	0
+17:13:47 deploy 1: InProgress	0	1	0
+17:14:51 deploy 1: InProgress	0	1	0
+17:15:54 deploy 1: InProgress	0	1	0
+17:16:57 deploy 1: InProgress	0	1	0
+17:17:59 deploy 1: InProgress	0	1	0
+17:19:02 deploy 1: InProgress	0	1	0
+17:20:06 deploy 1: InProgress	0	1	0
+17:21:09 deploy 1: InProgress	1	1	0
+17:22:12 deploy 1: InProgress	1	1	0
+17:23:16 deploy 1: InProgress	1	1	0
+17:24:19 deploy 1: InProgress	1	1	0
+17:25:23 deploy 1: InProgress	1	1	0
+17:26:25 deploy 1: InProgress	1	1	0
+17:27:28 deploy 1: InProgress	1	1	0
+17:28:32 deploy 1: InProgress	1	1	0
+17:29:35 deploy 1: InProgress	1	1	0
+17:30:39 deploy 1: InProgress	1	1	0
+17:31:42 deploy 1: InProgress	1	1	0
+17:32:46 deploy 1: InProgress	1	1	0
+17:33:49 deploy 1: InProgress	1	1	0
+17:34:52 deploy 1: Succeeded	2	0	0
+{"status":"ok"}  HTTP 200
+17:34:56 === deploy 2/3: d-ZZQ4G970N
+17:36:00 deploy 2: InProgress	0	1	0
+17:37:02 deploy 2: InProgress	0	1	0
+17:38:06 deploy 2: InProgress	0	1	0
+17:39:09 deploy 2: InProgress	0	1	0
+17:40:13 deploy 2: InProgress	0	1	0
+17:41:16 deploy 2: InProgress	0	1	0
+17:42:20 deploy 2: InProgress	0	1	0
+17:43:23 deploy 2: InProgress	0	1	0
+17:44:26 deploy 2: InProgress	0	1	0
+17:45:30 deploy 2: InProgress	0	1	0
+17:46:32 deploy 2: InProgress	0	1	0
+17:47:35 deploy 2: InProgress	0	1	0
+17:48:39 deploy 2: InProgress	0	1	0
+17:49:42 deploy 2: InProgress	0	1	0
+17:50:46 deploy 2: InProgress	1	1	0
+17:51:49 deploy 2: InProgress	1	1	0
+17:52:53 deploy 2: InProgress	1	1	0
+17:53:57 deploy 2: InProgress	1	1	0
+17:54:59 deploy 2: InProgress	1	1	0
+17:56:02 deploy 2: InProgress	1	1	0
+17:57:06 deploy 2: InProgress	1	1	0
+17:58:10 deploy 2: InProgress	1	1	0
+17:59:13 deploy 2: InProgress	1	1	0
+18:00:17 deploy 2: InProgress	1	1	0
+18:01:20 deploy 2: InProgress	1	1	0
+18:02:24 deploy 2: InProgress	1	1	0
+18:03:28 deploy 2: Succeeded	2	0	0
+18:03:30 === deploy 3/3: d-A6O7XR80N
+18:04:34 deploy 3: InProgress	0	1	0
+18:05:36 deploy 3: InProgress	0	1	0
+18:06:39 deploy 3: InProgress	0	1	0
+18:07:43 deploy 3: InProgress	0	1	0
+18:08:47 deploy 3: InProgress	0	1	0
+18:09:50 deploy 3: InProgress	0	1	0
+18:10:54 deploy 3: InProgress	0	1	0
+18:11:57 deploy 3: InProgress	0	1	0
+18:13:01 deploy 3: InProgress	0	1	0
+18:14:03 deploy 3: InProgress	0	1	0
+18:15:06 deploy 3: InProgress	0	1	0
+18:16:10 deploy 3: InProgress	0	1	0
+18:17:13 deploy 3: InProgress	0	1	0
+18:18:17 deploy 3: InProgress	0	1	0
+18:19:21 deploy 3: InProgress	1	1	0
+18:20:25 deploy 3: InProgress	1	1	0
+18:21:29 deploy 3: InProgress	1	1	0
+18:22:32 deploy 3: InProgress	1	1	0
+18:23:35 deploy 3: InProgress	1	1	0
+18:24:38 deploy 3: InProgress	1	1	0
+18:25:42 deploy 3: InProgress	1	1	0
+18:26:45 deploy 3: InProgress	1	1	0
+18:27:49 deploy 3: InProgress	1	1	0
+18:28:53 deploy 3: InProgress	1	1	0
+18:29:56 deploy 3: InProgress	1	1	0
+18:31:00 deploy 3: InProgress	1	1	0
+18:32:04 deploy 3: Succeeded	2	0	0
+18:32:05 === all 3 deploys succeeded
+18:32:05 === teardown (exit 0)
+make cd-down
+make[1]: Entering directory '/home/rajee/dg-lab'
+aws cloudformation delete-stack --region "us-east-1" --stack-name "driftgate-cd" && \
+	aws cloudformation wait stack-delete-complete --region "us-east-1" --stack-name "driftgate-cd"
+make[1]: Leaving directory '/home/rajee/dg-lab'
+make down
+make[1]: Entering directory '/home/rajee/dg-lab'
+aws cloudformation delete-stack --region us-east-1 --stack-name driftgate-net && aws cloudformation wait stack-delete-complete --region us-east-1 --stack-name driftgate-net
+make[1]: Leaving directory '/home/rajee/dg-lab'
+make: Entering directory '/home/rajee/dg-lab'
+aws cloudformation describe-stacks --region "us-east-1" --output table \
+	--query "Stacks[?StackName=='driftgate-storage' || StackName=='driftgate-net' || StackName=='driftgate-cd' || StackName=='driftgate-orchestrator'].[StackName,StackStatus]"
+------------------------------------------
+|             DescribeStacks             |
++--------------------+-------------------+
+|  driftgate-storage |  CREATE_COMPLETE  |
++--------------------+-------------------+
+aws ec2 describe-instances --region "us-east-1" --output table \
+	--filters "Name=tag:Project,Values=driftgate" \
+	--query "Reservations[].Instances[].[InstanceId,Tags[?Key=='Name'].Value | [0],State.Name]"
+---------------------------------------------------------------
+|                      DescribeInstances                      |
++----------------------+------------------------+-------------+
+|  i-0f50eb6bf39419347 |  driftgate-serving-a   |  terminated |
+|  i-094106129f457e2cf |  driftgate-serving-b   |  terminated |
+|  i-010c963b5365fd370 |  driftgate-build-host  |  terminated |
++----------------------+------------------------+-------------+
+make: Leaving directory '/home/rajee/dg-lab'
+18:35:18 === END rc=0  results: /home/rajee/driftgate-lab-runs/session2-20261124-1625
+deploy                      instance               D3 agree   D3 KL  D5 ref D5 cand   drop ITL ratio TTFT ratio   D3 s   D5 s
+deploy-1-d-FUPLUK70N        i-094106129f457e2cf       1.000   0.000   0.609   0.609  0.000     0.911      0.988    111    507
+deploy-1-d-FUPLUK70N        i-0f50eb6bf39419347       1.000   0.000   0.609   0.609  0.000     0.949      0.997    115    510
+deploy-2-d-ZZQ4G970N        i-094106129f457e2cf       1.000   0.000   0.609   0.609  0.000     0.906      0.991    111    507
+deploy-2-d-ZZQ4G970N        i-0f50eb6bf39419347       1.000   0.000   0.609   0.609  0.000     0.946      0.997    115    510
+deploy-3-d-A6O7XR80N        i-094106129f457e2cf       1.000   0.000   0.609   0.609  0.000     0.921      0.988    112    507
+deploy-3-d-A6O7XR80N        i-0f50eb6bf39419347       1.000   0.000   0.609   0.609  0.000     0.964      0.998    116    512

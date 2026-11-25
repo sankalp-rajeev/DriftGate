@@ -1,0 +1,7 @@
+[ 38%] Building CXX object src/CMakeFiles/llama.dir/llama-kv-cache-msa.cpp.o
+[ 40%] Building CXX object src/CMakeFiles/llama.dir/llama-kv-cache-dsv4.cpp.o
+[ 40%] Building CXX object src/CMakeFiles/llama.dir/llama-moe-cache.cpp.o
+[ 75%] Building CXX object common/CMakeFiles/llama-common.dir/hf-cache.cpp.o
+[ 77%] Building CXX object common/CMakeFiles/llama-common.dir/ngram-cache.cpp.o
+2026-11-24 21:44:00   11470231 bin/llama.cpp/8c16babba5d4c66e28a19d86e572e4b04f522d52/al2023-x86_64-avx512.tar.gz
+	

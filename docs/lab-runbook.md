@@ -56,8 +56,12 @@ with `aws s3 cp --sse AES256`. In subsequent sessions, restore the pinned D2 log
 the build host's local reference directory before a build. The serving hooks fetch the
 reference from S3.
 
-The gate records verdicts in report mode until the t3.large calibration in Phase 2.
-The laptop study's thresholds are archived separately.
+The committed `gate/thresholds.json` enables enforce mode at L1: D2 mean KLD 0,
+D3 1 minus agreement 0, D5 accuracy drop 0, and D6 p95 ITL ratio 1.37.
+D2 is enforced during the build; ValidateService enforces D3, D5 and D6.
+See the [session-2 threshold deviation](deviations/2026-11-24-t3large-thresholds.md)
+for the six-run evidence limit and the required Phase 4 F9 check. The laptop
+study's original thresholds are archived separately.
 
 The SSM agent writes Run Command output when `OutputS3BucketName` is set. Project
 code cannot set the SSE header on those uploads. Verify live in Phase 2 or 3 that

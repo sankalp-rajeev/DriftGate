@@ -90,3 +90,13 @@ def test_invalid_rules_are_rejected(rule):
 def test_old_schema_is_rejected():
     with pytest.raises(ValueError, match="schema"):
         score.validate({"schema": "driftgate.thresholds/1", "rules": []})
+
+
+def test_unrelated_stage_rules_do_not_produce_a_passing_score():
+    with pytest.raises(ValueError, match="no rules for the measured detectors"):
+        score.score(DETS, _t(_r("D2", "mean_kld", "upper", 0.0)))
+
+
+def test_missing_metric_in_a_measured_detector_is_an_error():
+    with pytest.raises(KeyError):
+        score.score({"D3": {}}, _t(_r("D3", "mean_agreement_share", "agreement", 1.0)))
