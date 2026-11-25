@@ -1,6 +1,6 @@
 """Gate CLI (FR-06, FR-08, FR-09, PRD Section 6.8): versioned JSON verdicts, gate mode, force-fail.
 
-Measurement only: no thresholds file is committed; tests use temporary ones to exercise enforce.
+The committed Lab thresholds enable enforce; temporary files exercise other gate modes.
 """
 
 import json
@@ -234,10 +234,10 @@ def _thresholds(value):
     return {"schema": cli.THRESHOLDS_SCHEMA, "rules": [rule]}
 
 
-def test_committed_config_has_no_thresholds_and_runs_in_report_mode():
+def test_committed_config_enforces_the_lab_thresholds():
     assert GATE_CONFIG["mode"] == "auto"
-    assert not Path(GATE_CONFIG["thresholds"]).exists()
-    assert cli.resolve_mode("auto", Path(GATE_CONFIG["thresholds"])) == "report"
+    assert Path(GATE_CONFIG["thresholds"]).is_file()
+    assert cli.resolve_mode("auto", Path(GATE_CONFIG["thresholds"])) == "enforce"
 
 
 def test_report_mode_records_verdict_and_exits_zero(tmp_path, monkeypatch):

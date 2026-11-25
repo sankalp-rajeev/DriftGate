@@ -65,6 +65,38 @@ def test_reference_logits_live_under_the_reference_key():
     assert pinned == Path(gate_cfg["reference_store"]["local_root"]) / "reference/a/b/c/d2_base.kld"
 
 
+@pytest.mark.parametrize(("mean_kld", "exit_code"), [(0.0, 0), (0.000001, 1)])
+def test_d2_cli_enforces_lab_threshold_before_deploy(tmp_path, mean_kld, exit_code):
+    """Stub only llama-perplexity; use the real CLI, parser and installed rules."""
+    cfg = load_yaml(Path("gate/config.yaml"))
+    cfg["thresholds"] = str(Path("gate/thresholds.json").resolve())
+    cfg["reference_store"]["local_root"] = str(tmp_path / "artifacts")
+    gate_config = tmp_path / "gate.json"
+    gate_config.write_text(json.dumps(cfg))
+    key = "reference/test/config/t3.large"
+    logits = Path(cfg["reference_store"]["local_root"]) / key / "d2_base.kld"
+    logits.parent.mkdir(parents=True)
+    logits.write_text("reference logits fixture")
+    binary = tmp_path / "bin/llama-perplexity"
+    binary.parent.mkdir()
+    binary.write_text(
+        "#!/bin/sh\ncat <<'OUTPUT'\n" + SAMPLE.replace("0.012345", f"{mean_kld:.6f}") + "\nOUTPUT\n"
+    )
+    binary.chmod(0o755)
+    env = dict(os.environ, LLAMA_CPP_BIN=str(binary.parent))
+    env.pop("PYTHONPATH", None)
+    result = subprocess.run(
+        [sys.executable, "-m", "gate.d2", "run", "--gate-config", str(gate_config),
+         "--reference-key", key],
+        env=env, capture_output=True, text=True, timeout=30,
+    )  # fmt: skip
+    assert result.returncode == exit_code, result.stderr
+    report = json.loads(result.stdout)
+    assert report["metrics"]["mean_kld"] == mean_kld
+    assert report["decision"]["mode"] == "enforce"
+    assert report["decision"]["passed"] is (exit_code == 0)
+
+
 BASE = d2.base_logits_path(
     load_yaml(Path("gate/config.yaml")), load_yaml(Path("serving/config.yaml")), None, None
 )

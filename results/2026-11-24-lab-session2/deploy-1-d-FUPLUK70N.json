@@ -1,0 +1,54 @@
+{
+    "deploymentInfo": {
+        "applicationName": "driftgate",
+        "deploymentGroupName": "driftgate-serving",
+        "deploymentConfigName": "CodeDeployDefault.OneAtATime",
+        "deploymentId": "d-FUPLUK70N",
+        "revision": {
+            "revisionType": "S3",
+            "s3Location": {
+                "bucket": "driftgate-artifacts-572483634573-us-east-1",
+                "key": "bundles/6c6732ba1d0e11a2572ae7330224602bffe253bd.zip",
+                "bundleType": "zip"
+            }
+        },
+        "status": "Succeeded",
+        "createTime": "2026-11-24T17:04:20.059000-05:00",
+        "completeTime": "2026-11-24T17:34:19.751000-05:00",
+        "deploymentOverview": {
+            "Pending": 0,
+            "InProgress": 0,
+            "Succeeded": 2,
+            "Failed": 0,
+            "Skipped": 0,
+            "Ready": 0
+        },
+        "description": "session2 A/A 1/3 6c6732ba1d0e11a2572ae7330224602bffe253bd",
+        "creator": "user",
+        "ignoreApplicationStopFailures": false,
+        "autoRollbackConfiguration": {
+            "enabled": true,
+            "events": [
+                "DEPLOYMENT_FAILURE",
+                "DEPLOYMENT_STOP_ON_ALARM"
+            ]
+        },
+        "updateOutdatedInstancesOnly": false,
+        "deploymentStyle": {
+            "deploymentType": "IN_PLACE",
+            "deploymentOption": "WITH_TRAFFIC_CONTROL"
+        },
+        "instanceTerminationWaitTimeStarted": false,
+        "loadBalancerInfo": {
+            "targetGroupInfoList": [
+                {
+                    "name": "driftgate-serving"
+                }
+            ]
+        },
+        "fileExistsBehavior": "DISALLOW",
+        "deploymentStatusMessages": [],
+        "computePlatform": "Server",
+        "relatedDeployments": {}
+    }
+}

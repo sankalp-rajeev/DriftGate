@@ -1,0 +1,62 @@
+{
+    "deploymentInfo": {
+        "applicationName": "driftgate",
+        "deploymentGroupName": "driftgate-serving",
+        "deploymentConfigName": "CodeDeployDefault.OneAtATime",
+        "deploymentId": "d-A6O7XR80N",
+        "previousRevision": {
+            "revisionType": "S3",
+            "s3Location": {
+                "bucket": "driftgate-artifacts-572483634573-us-east-1",
+                "key": "bundles/6c6732ba1d0e11a2572ae7330224602bffe253bd.zip",
+                "bundleType": "zip"
+            }
+        },
+        "revision": {
+            "revisionType": "S3",
+            "s3Location": {
+                "bucket": "driftgate-artifacts-572483634573-us-east-1",
+                "key": "bundles/6c6732ba1d0e11a2572ae7330224602bffe253bd.zip",
+                "bundleType": "zip"
+            }
+        },
+        "status": "Succeeded",
+        "createTime": "2026-11-24T18:03:30.663000-05:00",
+        "completeTime": "2026-11-24T18:31:40.908000-05:00",
+        "deploymentOverview": {
+            "Pending": 0,
+            "InProgress": 0,
+            "Succeeded": 2,
+            "Failed": 0,
+            "Skipped": 0,
+            "Ready": 0
+        },
+        "description": "session2 A/A 3/3 6c6732ba1d0e11a2572ae7330224602bffe253bd",
+        "creator": "user",
+        "ignoreApplicationStopFailures": false,
+        "autoRollbackConfiguration": {
+            "enabled": true,
+            "events": [
+                "DEPLOYMENT_STOP_ON_ALARM",
+                "DEPLOYMENT_FAILURE"
+            ]
+        },
+        "updateOutdatedInstancesOnly": false,
+        "deploymentStyle": {
+            "deploymentType": "IN_PLACE",
+            "deploymentOption": "WITH_TRAFFIC_CONTROL"
+        },
+        "instanceTerminationWaitTimeStarted": false,
+        "loadBalancerInfo": {
+            "targetGroupInfoList": [
+                {
+                    "name": "driftgate-serving"
+                }
+            ]
+        },
+        "fileExistsBehavior": "DISALLOW",
+        "deploymentStatusMessages": [],
+        "computePlatform": "Server",
+        "relatedDeployments": {}
+    }
+}

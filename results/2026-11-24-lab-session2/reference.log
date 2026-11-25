@@ -1,0 +1,26 @@
+server healthy after 8s
+{
+  "key": "reference/d7efb072e7724d25048a4fda0a3e10b04bdef5d06b1403a1c93bd9f1240a63c8/5c1277b1db8a99d27b529ae10370372e4da22ad6134478f18dcd8aae19d75d49/t3.large/",
+  "path": "artifacts/reference/d7efb072e7724d25048a4fda0a3e10b04bdef5d06b1403a1c93bd9f1240a63c8/5c1277b1db8a99d27b529ae10370372e4da22ad6134478f18dcd8aae19d75d49/t3.large/measurement.json",
+  "uploaded": null
+}
+measurement done after 993s
+{
+  "schema": "driftgate.d2/1",
+  "action": "base",
+  "model": "qwen2.5-1.5b-instruct-q8_0.gguf",
+  "corpus_sha256": "6c61f209b53a8f7e0ee25e22815b8472d1a29cf891f0a29bca35ae82cd285b75",
+  "base_logits": "artifacts/reference/d7efb072e7724d25048a4fda0a3e10b04bdef5d06b1403a1c93bd9f1240a63c8/5c1277b1db8a99d27b529ae10370372e4da22ad6134478f18dcd8aae19d75d49/t3.large/d2_base.kld",
+  "threads": 2,
+  "base_logits_sha256": "64dd3315513a332e4769dd0b14eeace85e833d7305b3ad770c1a6e2d6696a06f",
+  "base_logits_bytes": 309965812
+}
+total 304108
+drwxr-xr-x. 2 root root        49 Nov 24 22:01 .
+drwxr-xr-x. 3 root root        22 Nov 24 22:01 ..
+-rw-r--r--. 1 root root 309965812 Nov 24 22:03 d2_base.kld
+-rw-r--r--. 1 root root   1434353 Nov 24 22:01 measurement.json
+Completed 1.4 MiB/297.0 MiB (8.3 MiB/s) with 2 file(s) remainingupload: artifacts/reference/d7efb072e7724d25048a4fda0a3e10b04bdef5d06b1403a1c93bd9f1240a63c8/5c1277b1db8a99d27b529ae10370372e4da22ad6134478f18dcd8aae19d75d49/t3.large/measurement.json to s3://driftgate-artifacts-572483634573-us-east-1/reference/d7efb072e7724d25048a4fda0a3e10b04bdef5d06b1403a1c93bd9f1240a63c8/5c1277b1db8a99d27b529ae10370372e4da22ad6134478f18dcd8aae19d75d49/t3.large/measurement.json
+Completed 1.4 MiB/297.0 MiB (8.3 MiB/s) with 1 file(s) remainingCompleted 225.4 MiB/297.0 MiB (223.2 MiB/s) with 1 file(s) remainingCompleted 297.0 MiB/297.0 MiB (228.2 MiB/s) with 1 file(s) remainingupload: artifacts/reference/d7efb072e7724d25048a4fda0a3e10b04bdef5d06b1403a1c93bd9f1240a63c8/5c1277b1db8a99d27b529ae10370372e4da22ad6134478f18dcd8aae19d75d49/t3.large/d2_base.kld to s3://driftgate-artifacts-572483634573-us-east-1/reference/d7efb072e7724d25048a4fda0a3e10b04bdef5d06b1403a1c93bd9f1240a63c8/5c1277b1db8a99d27b529ae10370372e4da22ad6134478f18dcd8aae19d75d49/t3.large/d2_base.kld
+REFERENCE DONE key=reference/d7efb072e7724d25048a4fda0a3e10b04bdef5d06b1403a1c93bd9f1240a63c8/5c1277b1db8a99d27b529ae10370372e4da22ad6134478f18dcd8aae19d75d49/t3.large/ total=1115s
+	

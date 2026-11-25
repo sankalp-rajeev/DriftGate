@@ -64,3 +64,49 @@ The recorded D6 ratios used the full 64-prompt reference p95 as the denominator.
 The fix for session 2 uses the first 16 reference prompts for L1. See the
 [reference budget deviation](deviations/2026-11-24-t3large-reference-budget.md)
 for the measured timing.
+
+## Lab session 2, 24 November 2026
+
+The [unattended run archive](../results/2026-11-24-lab-session2/README.md)
+records revision `6c6732ba1d0e11a2572ae7330224602bffe253bd`, final `rc=0`,
+and teardown of all three instances. The persistent storage stack remained.
+
+### Binary cache and regenerated reference
+
+The build host printed `DriftGate build host READY` at 16:45:03 local time,
+before the first deploy. The shared cache contained
+`bin/llama.cpp/8c16babba5d4c66e28a19d86e572e4b04f522d52/al2023-x86_64-avx512.tar.gz`
+(11,470,231 bytes). The owner reports serving cache hits; the saved archive
+contains the cache listing and successful deploy records, not individual
+AfterInstall download logs. Subsequent deploys could reuse installed binaries.
+
+The t3.large reference measurement and D2 logits were regenerated using that
+generic AVX-512 build. The [reference log](../results/2026-11-24-lab-session2/reference.log)
+records a 993-second measurement, completion after 1,115 seconds including
+logit generation, and upload of both artifacts to the pinned reference key.
+The D2 logits were 309,965,812 bytes with SHA-256
+`64dd3315513a332e4769dd0b14eeace85e833d7305b3ad770c1a6e2d6696a06f`.
+
+### Three identical deploys, six A/A gates
+
+| Deployment | CodeDeploy status | Serving gate runs |
+| --- | --- | ---: |
+| [d-FUPLUK70N](../results/2026-11-24-lab-session2/deploy-1-d-FUPLUK70N.json) | Succeeded | 2 |
+| [d-ZZQ4G970N](../results/2026-11-24-lab-session2/deploy-2-d-ZZQ4G970N.json) | Succeeded | 2 |
+| [d-A6O7XR80N](../results/2026-11-24-lab-session2/deploy-3-d-A6O7XR80N.json) | Succeeded | 2 |
+
+All three deploys used the same revision on `i-094106129f457e2cf` and
+`i-0f50eb6bf39419347`. The third ID contains a letter O after 6.
+All six original verdicts ran in report mode and have D3 agreement **1.0**,
+KL **0**, and D5 accuracy **0.609375 vs 0.609375**, with no paired mismatches.
+ITL ratios were **0.906–0.964**, approximately 0.91 and 0.95 on the two hosts;
+TTFT ratios were **0.988–0.998**. L1 uses the first 16 reference prompts for D6.
+The ALB [health check](../results/2026-11-24-lab-session2/alb-health.txt)
+returned HTTP 200. Rollback and ALB deregistration/re-registration remain
+separate checks.
+
+Mean L1 detector time was **113.48 s D3 + 508.80 s D5 = 622.27 s (10.37 min)**,
+about 3.7% over NFR-01. See the [measured timing](deviations/2026-11-24-t3large-reference-budget.md#measured-session-2-results).
+The [owner-authorized threshold deviation](deviations/2026-11-24-t3large-thresholds.md)
+records zero behavioral thresholds, D6 1.37, the six-run evidence limit and
+the required Phase 4 F9 check. It does not claim a completed 20-run Lab calibration.

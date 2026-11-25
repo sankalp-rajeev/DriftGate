@@ -41,3 +41,21 @@ The budget levels remain as pre-registered.
 
 See the [session 1 evidence](../lab-constraints-evidence.md#cross-instance-determinism-sample-1)
 for the cross-instance comparison and the D6 denominator used in that run.
+
+## Measured session 2 results
+
+The [six L1 A/A verdicts](../../results/2026-11-24-lab-session2/README.md)
+from three identical deployments on two t3.large hosts averaged **622.27 s
+(10.37 min)**: **113.48 s D3 + 508.80 s D5**. Per-instance totals ranged
+from **618.10 to 627.56 s**. D5 accounted for about **82%** of detector time.
+These are measurement times, not the complete two-instance rolling deployment.
+
+The mean is about **3.7% above NFR-01's 600-second target**, within the
+900-second ValidateService limit. The regenerated budget-64 reference
+measurement completed after **993 s**; the full reference job, including D2
+logit generation, finished after **1,115 s**. These runs used the shared
+generic AVX-512 build and the matching L1 reference prefix for D6.
+
+The [Lab threshold deviation](2026-11-24-t3large-thresholds.md) authorizes
+L1 enforcement with the existing laptop latency rule; it does not claim
+that six Lab observations satisfy the original max-of-20 calibration rule.

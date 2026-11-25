@@ -1,7 +1,8 @@
 # Gate config (PRD Section 6.8). Read by `python -m gate`.
 schema_version: 1
 # report: record verdicts, exit 0. enforce: exit 1 when the gate score is above 1.
-# auto: enforce once `thresholds` exists (written by A/A calibration, T-15), report until then.
+# auto: enforce once `thresholds` exists, report until then. Lab L1 profile installed under
+# docs/deviations/2026-11-24-t3large-thresholds.md (owner-authorized calibration transfer).
 mode: auto
 thresholds: gate/thresholds.json
 # Reference measurement and D2 reference logits (PRD Section 6.8), stored under
