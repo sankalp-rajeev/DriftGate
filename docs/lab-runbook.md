@@ -12,13 +12,20 @@ for the demo.
 
 1. Start the Learner Lab and wait for the session to be ready.
 2. Load the new session's temporary AWS credentials into your shell.
-3. From the updated checkout, run `make serve-baseline`. It runs `cd-up` against
-   the existing network, resumes the serving instances if needed, and deploys the
-   last successful revision directly with CodeDeploy. If the deployment group
-   was recreated, it uses the last successful pipeline bundle recorded in S3.
-   After CodeDeploy succeeds it prints the existing ALB URL.
+3. From the updated checkout, run `make serve-baseline`. It records the ALB DNS
+   name, then runs `make up` on the existing stack with `UseNat=true` from
+   `deploy/cloudformation/network-params.json`. It records the DNS name again and
+   stops before `cd-up` if the name changed. If the name matches, it runs
+   `cd-up`, resumes the serving instances if needed, and deploys the last
+   successful revision directly with CodeDeploy. If the deployment group was
+   recreated, it uses the last successful pipeline bundle recorded in S3.
+   After CodeDeploy succeeds it prints the verified ALB URL.
 4. Check the printed URL with `curl -fsS http://<ALB-DNS>/health`. Expect
    `{"status":"ok"}` before opening the URL from the slides.
+
+If a CodeDeploy stack still imports the non-NAT subnet IDs, CloudFormation blocks
+the NAT-mode update. In that case startup stops at `make up`.
+[CloudFormation cross-stack reference rules](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/intrinsic-function-reference-importvalue.html)
 
 ## Start the session
 

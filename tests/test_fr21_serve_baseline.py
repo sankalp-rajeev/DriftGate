@@ -2,6 +2,7 @@
 
 import io
 import json
+import os
 import subprocess
 from contextlib import ExitStack
 from pathlib import Path
@@ -21,22 +22,92 @@ REVISION = {
 }
 
 
-def test_serve_baseline_target_uses_cd_up_with_existing_network():
-    result = subprocess.run(
-        ["make", "-n", "serve-baseline", "STACK_NAME=demo-net", "CD_STACK_NAME=demo-cd"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
+@pytest.fixture
+def serve_baseline_target(tmp_path):
+    commands = {
+        "aws": r"""
+case "$1 $2" in
+  "cloudformation describe-stacks")
+    case "$*" in
+      *AlbDnsName*)
+        if [[ -f "$NETWORK_UPDATED" ]]; then
+          echo "$DNS_AFTER"
+        else
+          echo existing-alb.example
+        fi ;;
+      *BucketName*) echo demo-bundles ;;
+      *) exit 99 ;;
+    esac ;;
+  "cloudformation deploy")
+    case "$*" in
+      *network.yaml*) touch "$NETWORK_UPDATED" ;;
+      *codedeploy.yaml*) ;;
+      *) exit 99 ;;
+    esac ;;
+  "sts get-caller-identity") echo 123456789012 ;;
+  *) exit 99 ;;
+esac
+""",
+        "uv": "exit 0",
+    }
+    for name, script in commands.items():
+        command = tmp_path / name
+        command.write_text('#!/bin/bash\nset -eu\necho "${0##*/} $*" >> "$CALLS"\n' + script)
+        command.chmod(0o755)
+
+    def run(dns_after):
+        calls = tmp_path / "calls"
+        result = subprocess.run(
+            ["make", "serve-baseline", "STACK_NAME=demo-net", "CD_STACK_NAME=demo-cd"],
+            cwd=ROOT,
+            env=os.environ
+            | {
+                "PATH": f"{tmp_path}:{os.environ['PATH']}",
+                "CALLS": str(calls),
+                "NETWORK_UPDATED": str(tmp_path / "network-updated"),
+                "DNS_AFTER": dns_after,
+            },
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return result, calls.read_text().splitlines()
+
+    return run
+
+
+def test_serve_baseline_updates_nat_network_and_checks_dns_before_cd_up(serve_baseline_target):
+    result, calls = serve_baseline_target("existing-alb.example")
+    assert result.returncode == 0, result.stderr
+    before, network, after, bucket, account, cd_up, deploy = calls
+    assert before == after
+    assert before.startswith("aws cloudformation describe-stacks")
+    assert "--stack-name demo-net" in before and "AlbDnsName" in before
+    assert "--stack-name demo-net --template-file deploy/cloudformation/network.yaml" in network
+    params_file = "deploy/cloudformation/network-params.json"
+    assert f"--parameter-overrides file://{params_file}" in network
+    assert {"ParameterKey": "UseNat", "ParameterValue": "true"} in json.loads(
+        (ROOT / params_file).read_text()
     )
-    assert "make cd-up" in result.stdout
-    assert "deploy/cloudformation/codedeploy.yaml" in result.stdout
-    assert "NetworkStackName=demo-net" in result.stdout
-    assert "orchestrator.serve_baseline" in result.stdout
-    assert "--network-stack demo-net" in result.stdout.replace('"', "")
-    assert "network.yaml" not in result.stdout
-    assert "orch-up" not in result.stdout
-    assert "demo-push" not in result.stdout
+    assert "BucketName" in bucket
+    assert account.startswith("aws sts get-caller-identity")
+    assert "--template-file deploy/cloudformation/codedeploy.yaml" in cd_up
+    assert "NetworkStackName=demo-net" in cd_up
+    assert deploy.startswith("uv run python -m orchestrator.serve_baseline")
+    assert "--network-stack demo-net --cd-stack demo-cd" in deploy
+    assert "ALB DNS before make up: existing-alb.example" in result.stdout
+    assert "ALB DNS after make up: existing-alb.example" in result.stdout
+
+
+def test_serve_baseline_aborts_before_cd_up_if_dns_changes(serve_baseline_target):
+    result, calls = serve_baseline_target("replacement-alb.example")
+    assert result.returncode != 0
+    assert "ALB DNS changed" in result.stderr
+    assert "existing-alb.example" in result.stderr and "replacement-alb.example" in result.stderr
+    assert "slides" in result.stderr
+    before, network, after = calls
+    assert "AlbDnsName" in before and before == after
+    assert "--template-file deploy/cloudformation/network.yaml" in network
 
 
 @pytest.fixture
