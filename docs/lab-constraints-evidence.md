@@ -110,3 +110,20 @@ about 3.7% over NFR-01. See the [measured timing](deviations/2026-11-24-t3large-
 The [owner-authorized threshold deviation](deviations/2026-11-24-t3large-thresholds.md)
 records zero behavioral thresholds, D6 1.37, the six-run evidence limit and
 the required Phase 4 F9 check. It does not claim a completed 20-run Lab calibration.
+
+## Lab session 3, 25 November 2026
+
+The first end-to-end CodeCommit push triggered the orchestrator, completed the SSM
+build and SNS approval, and rolled out successfully as CodeDeploy deployment
+`d-U8TDIHU0N` (FR-15, FR-27). The F1 weights change passed the tests, manifest,
+D1 and reference checks. D2 failed during Build, blocking the run before Approval
+and Deploy (FR-16).
+
+A synthetic `GateScore` of 5 moved the CloudWatch alarm to `ALARM`. CodeDeploy
+stopped `d-VZZYIAX0N` in about 70 seconds, skipped the second instance and
+automatically rolled back via `d-LV834YW0N`, which succeeded (FR-19, FR-20).
+
+The session fixes isolated tests from the Lab environment (#75), pinned the baseline
+serving fixture (#76), moved the candidate suite to dedicated CI (#77), and ended
+serving gate measurement early when the verdict was decided (#78). See the
+[session 3 results](../results/2026-11-25-lab-session3/README.md) for links.
