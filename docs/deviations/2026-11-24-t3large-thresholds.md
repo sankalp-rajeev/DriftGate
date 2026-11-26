@@ -55,9 +55,18 @@ Observed Lab ITL ratios were **0.906–0.964**: approximately **0.91** on
 were **0.988–0.998**. All six recorded verdicts pass the installed thresholds
 when scored offline. The original deployments ran in report mode.
 
-**Phase 4 must check F9 (threads 2 → 1) on t3.large and confirm that the p95
-ITL ratio exceeds 1.37. If it does not, record the null result.** Do not
-change the threshold to make F9 detectable.
+## F9 measured result, 26 November 2026
+
+F9 reduced serving threads from 2 to 1 on t3.large and **passed** the Lab gate.
+ValidateService took **11m22s** versus approximately **10.4 min** at 2 threads.
+The gate verdict establishes that the D6 p95 ITL ratio stayed within **1.37**.
+The hook duration is a separate measure of elapsed time. This is the measured
+null result for F9 under Lab L1. See the
+[session 4 results](../../results/2026-11-26-lab-session4/README.md).
+
+On t3.large the two vCPUs are hardware threads on one physical core. Sharing
+the core is a plausible explanation for the modest slowdown from dropping
+one serving thread. [EC2 CPU options](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/cpu-options-supported-instances-values.html#cpu-options-supported-instances-values-general).
 
 ## Timing and reproduction
 

@@ -127,3 +127,17 @@ The session fixes isolated tests from the Lab environment (#75), pinned the base
 serving fixture (#76), moved the candidate suite to dedicated CI (#77), and ended
 serving gate measurement early when the verdict was decided (#78). See the
 [session 3 results](../results/2026-11-25-lab-session3/README.md) for links.
+
+## Lab session 4, 26 November 2026
+
+The recording session deployed a clean push (FR-15, FR-27). D2 blocked the
+F1 weights change in Build (FR-16). F9 reduced serving threads from 2 to 1
+and passed ValidateService on t3.large. The hook took 11m22s versus about
+10.4 min at 2 threads, and the p95 ITL ratio stayed within the D6 threshold
+of 1.37. See the [F9 measured result](deviations/2026-11-24-t3large-thresholds.md#f9-measured-result-26-november-2026).
+
+F3, the `q4_0` KV-cache change, passed Build and failed ValidateService on
+the first instance of `d-DXAUXSI1N`. The gate stopped measuring early with
+D3 agreement of 0.0039 and mean approximate KL of 11.34. CodeDeploy skipped
+the second instance and triggered automatic rollback (FR-18, FR-19).
+See the [session 4 results](../results/2026-11-26-lab-session4/README.md).

@@ -2,8 +2,7 @@
 
 The lock is `runs/active.json`, created with an S3 conditional put (If-None-Match: *); moto
 5.2.5 models it (a second conditional put returns 412 PreconditionFailed). A push during an
-active run queues as "latest"; a newer push replaces the queued one; when the run ends, for
-any reason, the lock is released and the queued push starts.
+active run is recorded as rejected-busy. The lock is released when the run ends.
 """
 
 import json
@@ -40,10 +39,6 @@ def lock(pipeline):
     return json.loads(obj["Body"].read())
 
 
-def queued(pipeline):
-    return pipeline["orc"].store.queued()
-
-
 def ssm_commands():
     return boto3.client("ssm", region_name=REGION).list_commands()["Commands"]
 
@@ -77,103 +72,91 @@ def test_lock_released_only_by_its_holder(pipeline):
     assert store.lock_holder() is None
 
 
-def test_second_push_is_queued_not_started(pipeline):
+def test_busy_push_of_same_commit_is_recorded_and_never_replayed(pipeline):
     run_id = first_run(pipeline)
-    out = pipeline["orc"].handle(
-        push_event(commit=C2, event_id="evt-2", time="2026-11-24T12:01:00Z")
+    orc, clock = pipeline["orc"], pipeline["clock"]
+    build_succeeds(pipeline, run_id)
+    approve_latest(pipeline, run_id)
+    duplicate_commit = push_event(commit=COMMIT, event_id="evt-2")
+    rejected = orc.handle(duplicate_commit)
+
+    clock.advance(60)
+    deploy = stage(read_record(pipeline["s3"], run_id), "deploy")
+    assert orc.handle(deploy_event(deploy["details"]["deployment_id"], "SUCCESS"))["status"] == (
+        "succeeded"
     )
-    assert out == {"action": "queued", "commit_id": C2, "active_run_id": run_id}
-    assert queued(pipeline)["trigger"]["commit_id"] == C2
     assert len(ssm_commands()) == 1
-    assert lock(pipeline)["run_id"] == run_id
+    assert lock(pipeline) is None
+    assert rejected["action"] == "rejected-busy"
+    record = read_record(pipeline["s3"], rejected["run_id"])
+    assert record["status"] == "rejected-busy"
+    assert record["trigger"]["commit_id"] == COMMIT
+    assert stage(record, "source")["details"]["active_run_id"] == run_id
+    assert all(
+        stage(record, name)["status"] == "skipped" for name in ("build", "approval", "deploy")
+    )
 
-
-def test_third_push_replaces_the_queued_one(pipeline):
-    first_run(pipeline)
-    orc = pipeline["orc"]
-    orc.handle(push_event(commit=C2, event_id="evt-2", time="2026-11-24T12:01:00Z"))
-    out = orc.handle(push_event(commit=C3, event_id="evt-3", time="2026-11-24T12:02:00Z"))
-    assert out["action"] == "queued"
-    assert out["replaced_commit_id"] == C2
-    assert queued(pipeline)["trigger"]["commit_id"] == C3
+    assert orc.handle(duplicate_commit)["action"] == "ignored"
     assert len(ssm_commands()) == 1
 
 
-def test_late_delivered_older_push_does_not_replace_newer(pipeline):
-    first_run(pipeline)
+def test_redelivery_during_build_start_is_ignored(pipeline, monkeypatch):
     orc = pipeline["orc"]
-    orc.handle(push_event(commit=C3, event_id="evt-3", time="2026-11-24T12:02:00Z"))
-    out = orc.handle(push_event(commit=C2, event_id="evt-2", time="2026-11-24T12:01:00Z"))
-    assert out["action"] == "ignored"
-    assert queued(pipeline)["trigger"]["commit_id"] == C3
+    send = orc.ssm.send_command
+    push = push_event()
+
+    def send_after_redelivery(**kwargs):
+        assert orc.handle(push)["action"] == "ignored"
+        return send(**kwargs)
+
+    monkeypatch.setattr(orc.ssm, "send_command", send_after_redelivery)
+    assert orc.handle(push)["build"]["action"] == "build_started"
+    assert len(ssm_commands()) == 1
 
 
-def _queue_two(pipeline):
+def test_each_busy_push_is_rejected_until_run_releases_lock(pipeline):
+    run_id = first_run(pipeline)
     orc = pipeline["orc"]
-    orc.handle(push_event(commit=C2, event_id="evt-2", time="2026-11-24T12:01:00Z"))
-    orc.handle(push_event(commit=C3, event_id="evt-3", time="2026-11-24T12:02:00Z"))
+    for commit, event_id in ((C2, "evt-2"), (C3, "evt-3")):
+        out = orc.handle(push_event(commit=commit, event_id=event_id))
+        assert out["action"] == "rejected-busy"
+        assert out["active_run_id"] == run_id
+        assert read_record(pipeline["s3"], out["run_id"])["trigger"]["commit_id"] == commit
+    assert len(ssm_commands()) == 1
 
+    command_id = stage(read_record(pipeline["s3"], run_id), "build")["details"]["command_id"]
+    assert orc.handle(ssm_event(command_id, "Failed"))["status"] == "failed"
+    assert lock(pipeline) is None
+    assert len(ssm_commands()) == 1
 
-def _assert_queued_run_started(pipeline, finished_run, out):
-    nxt = out["next"]
-    assert nxt["action"] == "run_started"
-    assert nxt["run_id"] != finished_run
-    assert lock(pipeline)["run_id"] == nxt["run_id"]
-    assert queued(pipeline) is None
-    rec = read_record(pipeline["s3"], nxt["run_id"])
-    assert rec["trigger"]["commit_id"] == C3
-    build = stage(rec, "build")
-    assert build["status"] == "running"
-    assert nxt["build"]["action"] == "build_started"
-    assert build["details"]["waiting_for_host"] is False
-    assert build["details"]["started_host"] is False
+    fresh = orc.handle(push_event(commit=C3, event_id="evt-4"))
+    assert fresh["build"]["action"] == "build_started"
     assert len(ssm_commands()) == 2
 
 
-def test_release_on_build_failure_starts_queued_run(pipeline):
-    run_id = first_run(pipeline)
-    _queue_two(pipeline)
-    pipeline["clock"].advance(60)
-    command_id = stage(read_record(pipeline["s3"], run_id), "build")["details"]["command_id"]
-    out = pipeline["orc"].handle(ssm_event(command_id, "Failed"))
-    assert out["status"] == "failed"
-    _assert_queued_run_started(pipeline, run_id, out)
-
-
-def test_release_on_reject_starts_queued_run(pipeline):
+def test_approval_rejection_releases_lock_without_replay(pipeline):
     run_id = first_run(pipeline)
     build_succeeds(pipeline, run_id)
-    _queue_two(pipeline)
-    pipeline["clock"].advance(60)
-    out = approve_latest(pipeline, run_id, decision="reject")
-    assert out["result"] == "rejected"
-    holder = lock(pipeline)["run_id"]
-    assert holder != run_id
-    assert read_record(pipeline["s3"], holder)["trigger"]["commit_id"] == C3
+    orc = pipeline["orc"]
+    assert orc.handle(push_event(commit=C2, event_id="evt-2"))["action"] == "rejected-busy"
 
-
-def test_release_on_deploy_success_starts_queued_run(pipeline):
-    run_id = first_run(pipeline)
-    build_succeeds(pipeline, run_id)
-    approve_latest(pipeline, run_id)
-    _queue_two(pipeline)
-    pipeline["clock"].advance(60)
-    deployment_id = stage(read_record(pipeline["s3"], run_id), "deploy")["details"]["deployment_id"]
-    out = pipeline["orc"].handle(deploy_event(deployment_id, "SUCCESS"))
-    assert out["status"] == "succeeded"
-    _assert_queued_run_started(pipeline, run_id, out)
-
-
-def test_run_end_without_queue_leaves_no_lock(pipeline):
-    run_id = first_run(pipeline)
-    command_id = stage(read_record(pipeline["s3"], run_id), "build")["details"]["command_id"]
-    out = pipeline["orc"].handle(ssm_event(command_id, "Failed"))
-    assert "next" not in out
+    assert approve_latest(pipeline, run_id, decision="reject")["result"] == "rejected"
     assert lock(pipeline) is None
-    # The next push starts straight away.
-    assert pipeline["orc"].handle(push_event(commit=C2, event_id="evt-2"))["action"] == (
-        "run_started"
+    assert len(ssm_commands()) == 1
+
+
+def test_existing_queue_is_inert_after_upgrading(pipeline):
+    run_id = first_run(pipeline)
+    pipeline["s3"].put_object(
+        Bucket=BUCKET,
+        Key="runs/queued.json",
+        Body=json.dumps({"trigger": {"commit_id": C2}}),
     )
+    command_id = stage(read_record(pipeline["s3"], run_id), "build")["details"]["command_id"]
+
+    assert pipeline["orc"].handle(ssm_event(command_id, "Failed"))["status"] == "failed"
+    assert lock(pipeline) is None
+    assert len(ssm_commands()) == 1
 
 
 def test_failed_build_start_releases_lock(pipeline, monkeypatch):
@@ -204,7 +187,6 @@ def test_codedeploy_rejecting_a_deployment_ends_run_and_releases_lock(pipeline):
     orc.codedeploy = RejectingCodeDeploy()
     run_id = first_run(pipeline)
     build_succeeds(pipeline, run_id)
-    _queue_two(pipeline)
     _url, params = links_from(pipeline["sns"].published[-1]["Message"])["approve"]
     resp = approval.handle(url_event("POST", params), orc)
     assert resp["statusCode"] == 503
@@ -215,9 +197,7 @@ def test_codedeploy_rejecting_a_deployment_ends_run_and_releases_lock(pipeline):
     assert dep["status"] == "failed"
     assert dep["outcome"] == "DeploymentGroupAlreadyHasActiveDeployment"
     assert "active deployment" in dep["details"]["error"]
-    holder = lock(pipeline)["run_id"]
-    assert holder != run_id
-    assert read_record(pipeline["s3"], holder)["trigger"]["commit_id"] == C3
+    assert lock(pipeline) is None
 
 
 def test_build_command_sets_ssm_environment_before_prd_build(pipeline):
@@ -244,7 +224,7 @@ def test_unexpired_lock_is_not_taken_over(pipeline):
     run_id = first_run(pipeline)
     pipeline["clock"].advance(7200 - 1)
     out = pipeline["orc"].handle(push_event(commit=C2, event_id="evt-2"))
-    assert out["action"] == "queued"
+    assert out["action"] == "rejected-busy"
     assert lock(pipeline)["run_id"] == run_id
 
 

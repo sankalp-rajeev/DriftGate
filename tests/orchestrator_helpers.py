@@ -132,8 +132,3 @@ def ec2_event(instance_id, state):
         "source": "aws.ec2",
         "detail": {"instance-id": instance_id, "state": state},
     }
-
-
-def host_comes_up(pipeline):
-    """The build host's EC2 'running' event arrives (it is already SSM-online in the fixture)."""
-    return pipeline["orc"].handle(ec2_event(pipeline["host_id"], "running"))

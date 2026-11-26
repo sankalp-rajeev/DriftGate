@@ -1,7 +1,6 @@
 """Manual recovery for a stuck run lock (PRD 6.8, `make unlock`).
 
 Deletes `runs/active.json` and marks the run that held it `abandoned` (reason "manual unlock").
-The queued push, if any, is left queued; the next push or run end starts it.
 
 Runs with the operator's own AWS credentials (e.g. the Lab session's), never from tests:
   make unlock BUCKET=<driftgate-storage bucket>

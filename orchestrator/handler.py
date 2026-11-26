@@ -5,7 +5,7 @@ transition (one AWS start call plus a run-record write) and returns. Nothing wai
 CodeDeploy; their status-change events invoke the function again.
 
   CodeCommit push to the configured branch  -> new run, source done, build stage started;
-                                               if a run is active, queued as "latest" instead
+                                               if a run is active, record rejected-busy
   build stage start                         -> build host (tag Role=build-host) started if
                                                stopped; the build command is sent (SSM) once
                                                both its EC2 "running" state-change event and
@@ -21,9 +21,8 @@ CodeDeploy; their status-change events invoke the function again.
   CodeDeploy deployment state (terminal)    -> deploy done, run finished
 
 One active run at a time (PRD 6.8): `runs/active.json` is created with a conditional put and
-deleted when the run ends, whatever the outcome; the queued push, if any, then starts. A lock
-past its `expires_at` (2 h) is stale: the next push takes it over and the old run is marked
-abandoned.
+deleted when the run ends. A lock past its `expires_at` (2 h) is stale: the next push takes
+it over and the old run is marked abandoned.
 """
 
 from __future__ import annotations
@@ -133,21 +132,29 @@ class Orchestrator:
             "event_id": event_id,
             "event_time": event.get("time"),
         }
-        return self._start_or_queue(trigger)
-
-    def _start_or_queue(self, trigger: dict[str, Any]) -> dict[str, Any]:
         now = self.clock()
         run_id = f"{now.strftime('%Y%m%dT%H%M%SZ')}-{trigger['commit_id'][:8]}"
-        lock = self.store.acquire_lock(run_id, now)
+        lock = self.store.acquire_lock(run_id, now, event_id=event_id)
         if not lock:
-            return self._queue(trigger)
+            if lock.event_id == event_id:
+                return _ignored("duplicate push event", lock.held_by)
+            return self._reject_busy(trigger, run_id, now, lock.held_by)
+        return self._start_run(trigger, run_id, now, lock)
+
+    def _start_run(
+        self, trigger: dict[str, Any], run_id: str, now: datetime, lock: rr.LockResult
+    ) -> dict[str, Any]:
         out: dict[str, Any] = {"action": "run_started", "run_id": run_id}
-        if lock.stale:
-            stale_id = lock.stale["run_id"]
-            reason = f"stale lock (expired {rr.iso(self.store.lock_expires_at(lock.stale))})"
-            self.store.abandon(stale_id, reason, now)
-            out["abandoned_run_id"] = stale_id
         try:
+            if lock.stale:
+                stale_id = lock.stale["run_id"]
+                reason = f"stale lock (expired {rr.iso(self.store.lock_expires_at(lock.stale))})"
+                self.store.abandon(stale_id, reason, now)
+                out["abandoned_run_id"] = stale_id
+            existing = self.store.lookup("event", trigger["event_id"])
+            if existing:
+                self.store.release_lock(run_id)
+                return _ignored("duplicate push event", existing)
             record = rr.new_record(run_id, trigger, self.STAGES, now)
             rr.start_stage(record, "source", now)
             rr.end_stage(record, "source", "succeeded", f"push {trigger['commit_id']}", now)
@@ -159,35 +166,27 @@ class Orchestrator:
         self.store.put_index("event", trigger["event_id"], run_id)
         return out
 
-    def _queue(self, trigger: dict[str, Any]) -> dict[str, Any]:
-        """Keep only the latest push that arrived during the active run."""
-        active = self.store.lock_holder()
-        current = self.store.queued()
-        if current and (current["trigger"].get("event_time") or "") > (
-            trigger.get("event_time") or ""
-        ):
-            return _ignored("older than the queued push", active)
-        self.store.put_queued({"trigger": trigger, "queued_at": rr.iso(self.clock())})
-        out: dict[str, Any] = {
-            "action": "queued",
+    def _reject_busy(
+        self, trigger: dict[str, Any], run_id: str, now: datetime, holder: str | None
+    ) -> dict[str, Any]:
+        event_id = trigger["event_id"]
+        existing = self.store.lookup("event", event_id)
+        if existing:
+            return _ignored("duplicate push event", existing)
+        # A distinct event can name the same commit in the same second as the active run.
+        suffix = hashlib.sha256(event_id.encode()).hexdigest()[:12]
+        run_id = f"{run_id}-busy-{suffix}"
+        record = rr.new_record(run_id, trigger, self.STAGES, now)
+        rr.end_stage(record, "source", "failed", "rejected-busy", now, {"active_run_id": holder})
+        rr.finish_run(record, "rejected-busy", now)
+        self.store.save(record)
+        self.store.put_index("event", event_id, run_id)
+        return {
+            "action": "rejected-busy",
+            "run_id": run_id,
             "commit_id": trigger["commit_id"],
-            "active_run_id": active,
+            "active_run_id": holder,
         }
-        if current and current["trigger"]["commit_id"] != trigger["commit_id"]:
-            out["replaced_commit_id"] = current["trigger"]["commit_id"]
-        return out
-
-    def _start_queued(self) -> dict[str, Any] | None:
-        entry = self.store.queued()
-        if not entry:
-            return None
-        # Cleared first: a push arriving after the new run starts must queue, not be lost.
-        self.store.clear_queued()
-        try:
-            return self._start_or_queue(entry["trigger"])
-        except Exception:
-            self.store.put_queued(entry)
-            raise
 
     # ---- build host (PRD 6.8) -----------------------------------------------------------
 
@@ -624,15 +623,11 @@ class Orchestrator:
         rr.finish_run(record, status, self.clock())
         self.store.save(record)
         self.store.release_lock(record["run_id"])
-        out: dict[str, Any] = {
+        return {
             "action": "run_finished",
             "run_id": record["run_id"],
             "status": status,
         }
-        nxt = self._start_queued()
-        if nxt:
-            out["next"] = nxt
-        return out
 
     def _record_for(self, kind: str, key: str | None) -> dict[str, Any] | None:
         if not key:

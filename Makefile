@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 .PHONY: help setup test lint fmt models verify serve gate reference fault study study-status up down storage-up storage-down obs-up obs-down orchestrator-zip unlock
-.PHONY: codecommit-push cd-up cd-down orch-up session-down lab-status
+.PHONY: codecommit-push cd-up cd-down orch-up session-down lab-status serve-baseline
 .PHONY: demo-push demo-reset session-up pipeline-status
 .PHONY: check-baseline-fixture
 
@@ -21,9 +21,10 @@ APPROVAL_EMAIL ?=
 CFN_DIR := deploy/cloudformation
 CFN_TEMPLATES := $(CFN_DIR)/*.yaml orchestrator/template.yaml
 
-# Expanded in Lab recipes only. Resolve the storage output and the account of the active session.
+# Expanded in Lab recipes only.
 LAB_BUCKET = aws cloudformation describe-stacks --region "$(AWS_REGION)" --stack-name "$(STORAGE_STACK_NAME)" --query "Stacks[0].Outputs[?OutputKey=='BucketName'].OutputValue | [0]" --output text
 LAB_ACCOUNT = aws sts get-caller-identity --region "$(AWS_REGION)" --query Account --output text
+LAB_ALB_DNS = aws cloudformation describe-stacks --region "$(AWS_REGION)" --stack-name "$(STACK_NAME)" --query "Stacks[0].Outputs[?OutputKey=='AlbDnsName'].OutputValue | [0]" --output text
 
 help: ## List make targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-8s %s\n", $$1, $$2}'
@@ -113,6 +114,27 @@ cd-up: ## Create or update the CodeDeploy stack and the three EC2 instances
 		--template-file "$(CFN_DIR)/codedeploy.yaml" --tags Project=driftgate --no-fail-on-empty-changeset \
 		--parameter-overrides "NetworkStackName=$(STACK_NAME)" "BucketName=$$bucket" \
 		"LabRoleArn=arn:aws:iam::$$account:role/LabRole" "RepositoryName=$(REPOSITORY_NAME)"
+
+# MAKE_COMMAND keeps this recipe's AWS calls out of make dry runs.
+serve-baseline: ## Restore the demo network and redeploy behind the existing ALB (Lab only)
+	@set -eu; \
+	before="$$($(LAB_ALB_DNS))" || { echo "serve-baseline: cannot read the existing ALB DNS for $(STACK_NAME)" >&2; exit 1; }; \
+	if [ -z "$$before" ] || [ "$$before" = None ]; then \
+		echo "serve-baseline: $(STACK_NAME) has no existing ALB DNS. The slides require the original URL. Stopping before make up." >&2; \
+		exit 1; \
+	fi; \
+	printf 'ALB DNS before make up: %s\n' "$$before"; \
+	"$(MAKE_COMMAND)" up; \
+	after="$$($(LAB_ALB_DNS))" || { echo "serve-baseline: cannot verify the ALB DNS after make up. Stopping before cd-up." >&2; exit 1; }; \
+	printf 'ALB DNS after make up: %s\n' "$$after"; \
+	if [ "$$before" != "$$after" ]; then \
+		printf 'serve-baseline: ALB DNS changed from %s to %s. The slides use the original URL. Stopping before cd-up.\n' "$$before" "$$after" >&2; \
+		exit 1; \
+	fi; \
+	"$(MAKE_COMMAND)" cd-up
+	uv run python -m orchestrator.serve_baseline --region "$(AWS_REGION)" \
+		--network-stack "$(STACK_NAME)" --cd-stack "$(CD_STACK_NAME)" \
+		--storage-stack "$(STORAGE_STACK_NAME)"
 
 cd-down: ## Delete CodeDeploy and EC2 instances, then wait for stack deletion
 	aws cloudformation delete-stack --region "$(AWS_REGION)" --stack-name "$(CD_STACK_NAME)" && \
