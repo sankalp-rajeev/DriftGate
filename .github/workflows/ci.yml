@@ -14,3 +14,11 @@ jobs:
       - run: make lint
       - run: make check-baseline-fixture
       - run: make test
+
+  candidate-suite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: make setup
+      - run: uv run pytest -q -m candidate_suite

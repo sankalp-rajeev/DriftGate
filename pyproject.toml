@@ -33,6 +33,7 @@ packages = ["gate", "faults", "analysis", "orchestrator"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = ["candidate_suite: full-suite candidate regressions (GitHub CI only)"]
 
 [tool.ruff]
 line-length = 100

@@ -31,8 +31,8 @@ help: ## List make targets
 setup: ## Create the environment and install dependencies
 	uv sync
 
-test: ## Run the test suite
-	uv run pytest -q
+test: ## Run the test suite excluding CI-only candidate regressions
+	uv run pytest -q -m "not candidate_suite"
 
 check-baseline-fixture: ## Check baseline test data against the approved model and config hashes (CI only)
 	uv run python -m analysis.check_baseline_fixture

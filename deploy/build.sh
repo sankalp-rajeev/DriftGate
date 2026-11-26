@@ -17,6 +17,7 @@
 #
 # DRIFTGATE_BUILD_STEPS (default "tests manifest d1 d2 package") selects steps, for local use
 # and tests.
+# The tests step excludes candidate_suite regressions; GitHub CI runs them separately.
 # DRIFTGATE_MANIFEST (default serving/manifest.json) is the manifest the FR-02 step checks.
 # D1 and D2 run inside `gate.telemetry span` (FR-24): a no-op unless DRIFTGATE_TELEMETRY=1, then
 # a gate.D1 / gate.D2 span under TRACEPARENT, if set (laptop runs with the local collector).
@@ -101,7 +102,7 @@ record commit 0 0 ""
 
 for step in $STEPS; do
   case "$step" in
-    tests) run_step tests "$OUT/tests.log" uv run pytest -q ;;
+    tests) run_step tests "$OUT/tests.log" uv run pytest -q -m "not candidate_suite" ;;
     manifest) run_step manifest "$OUT/manifest.json" \
       uv run python -m gate.manifest verify --config "$CONFIG" --manifest "$MANIFEST" ;;
     d1) run_step d1 "$OUT/d1.json" uv run python -m gate.telemetry span D1 -- \

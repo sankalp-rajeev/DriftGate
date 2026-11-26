@@ -11,6 +11,8 @@ from baseline_serving import ROOT, workspace
 
 from faults import inject
 
+pytestmark = pytest.mark.candidate_suite
+
 
 def copy_candidate(destination):
     subprocess.run(["git", "clone", "--shared", "--quiet", str(ROOT), str(destination)], check=True)
