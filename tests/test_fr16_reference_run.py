@@ -77,14 +77,15 @@ def test_reference_success_then_build_runs(pipeline, orc):
     assert orc.handle(ssm_event(ref_cmd, "Success"))["action"] == "ignored"
 
 
-def test_reference_failure_fails_build_and_stops_host(pipeline, orc):
+def test_reference_failure_fails_build_and_keeps_host_running(pipeline, orc):
     run_id = orc.handle(push_event())["run_id"]
     ref_cmd = details(pipeline, run_id)["reference"]["command_id"]
     out = orc.handle(ssm_event(ref_cmd, "Failed"))
     assert out["status"] == "failed"
     rec = read_record(pipeline["s3"], run_id)
     assert stage(rec, "build")["outcome"] == "reference run Failed"
-    assert "host_stopped_at" in stage(rec, "build")["details"]
+    resp = pipeline["ec2"].describe_instances(InstanceIds=[pipeline["host_id"]])
+    assert resp["Reservations"][0]["Instances"][0]["State"]["Name"] == "running"
     assert len(commands()) == 1
     assert orc.store.lock_holder() is None
 

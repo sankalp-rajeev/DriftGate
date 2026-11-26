@@ -18,7 +18,6 @@ from orchestrator_helpers import (
     approve_latest,
     build_succeeds,
     deploy_event,
-    host_comes_up,
     links_from,
     push_event,
     read_record,
@@ -125,10 +124,9 @@ def _assert_queued_run_started(pipeline, finished_run, out):
     assert rec["trigger"]["commit_id"] == C3
     build = stage(rec, "build")
     assert build["status"] == "running"
-    # The first build stopped the host, so the queued run wakes it and waits for it.
-    assert build["details"]["waiting_for_host"] is True
-    assert build["details"]["started_host"] is True
-    assert host_comes_up(pipeline)["action"] == "build_started"
+    assert nxt["build"]["action"] == "build_started"
+    assert build["details"]["waiting_for_host"] is False
+    assert build["details"]["started_host"] is False
     assert len(ssm_commands()) == 2
 
 

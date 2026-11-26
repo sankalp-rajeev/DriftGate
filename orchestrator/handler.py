@@ -12,12 +12,12 @@ CodeDeploy; their status-change events invoke the function again.
                                                SSM online status have arrived
   EC2 instance state change (build host)    -> records "running"; starts the host if it was
                                                stopping when the build needed it
-  SSM command status (terminal)             -> build done, build host stopped; on success
-                                               approval requested (SNS)
+  SSM command status (terminal)             -> build done, build host idle timer starts;
+                                               on success approval requested (SNS)
   approval decision (orchestrator/approval) -> approve starts deploy; reject ends the run
   scheduled sweep (EventBridge rate rule)   -> approvals past their deadline are rejected;
                                                a waiting build re-checks SSM online status; an
-                                               idle build host (> 30 min) is stopped
+                                               idle build host is stopped at the configured limit
   CodeDeploy deployment state (terminal)    -> deploy done, run finished
 
 One active run at a time (PRD 6.8): `runs/active.json` is created with a conditional put and
@@ -319,7 +319,7 @@ class Orchestrator:
         ref["outcome"] = status
         ref["ended_at"] = rr.iso(now)
         if status in SSM_FAILURE:
-            self._stop_build_host(record)
+            self._record_build_host_usage(build, now)
             rr.end_stage(record, "build", "failed", f"reference run {status}", now)
             return self._finish(record, "failed")
         self._send_build(record, build["details"]["instance_id"])
@@ -347,18 +347,13 @@ class Orchestrator:
             return self._try_send_build(record)
         return _ignored(f"instance state {state}", record["run_id"])
 
-    def _stop_build_host(self, record: dict[str, Any]) -> None:
-        details = rr.get_stage(record, "build")["details"]
-        instance_id = details.get("instance_id")
-        if not instance_id:
-            return
-        now = self.clock()
-        self.ec2.stop_instances(InstanceIds=[instance_id])
-        details["host_stopped_at"] = rr.iso(now)
-        self.store.put_host_usage(instance_id, now)
+    def _record_build_host_usage(self, build: dict[str, Any], now: datetime) -> None:
+        instance_id = build["details"].get("instance_id")
+        if instance_id:
+            self.store.put_host_usage(instance_id, now)
 
     def sweep_build_host(self) -> dict[str, Any]:
-        """Re-check a build waiting for SSM online status; stop the host when idle > 30 min."""
+        """Re-check SSM readiness and stop the build host after the configured idle window."""
         for instance_id in self.store.list_index("host-wait"):
             record = self._record_for("host-wait", instance_id)
             if record is None or rr.get_stage(record, "build")["status"] != "running":
@@ -369,18 +364,20 @@ class Orchestrator:
         if host is None or host["State"]["Name"] != "running":
             return {"action": "none"}
         holder = self.store.lock_holder()
-        active = self.store.load(holder) if holder else None
-        if active and active["status"] == "running":
-            build = rr.get_stage(active, "build")
-            if build["status"] == "running":
+        if holder:
+            active = self.store.load(holder)
+            # A new run takes the lock before writing its first run record.
+            if active is None or rr.get_stage(active, "build")["status"] in ("pending", "running"):
                 return {"action": "none", "reason": "build in progress"}
         usage = self.store.host_usage()
         last = host["LaunchTime"]
         if usage and usage["instance_id"] == host["InstanceId"]:
             last = max(last, datetime.fromisoformat(usage["last_used_at"]))
         idle = (self.clock() - last).total_seconds()
-        if idle <= self.cfg.build.host_idle_stop_seconds:
+        if idle < self.cfg.build.idle_stop_minutes * 60:
             return {"action": "none", "idle_seconds": int(idle)}
+        if self.store.lock_holder() != holder:
+            return {"action": "none", "reason": "active run changed during sweep"}
         self.ec2.stop_instances(InstanceIds=[host["InstanceId"]])
         return {"action": "stopped_idle_host", "instance_id": host["InstanceId"]}
 
@@ -438,7 +435,7 @@ class Orchestrator:
         if build["details"].get("command_id") != d.get("command-id"):
             return _ignored("not this run's build command", record["run_id"])
         now = self.clock()
-        self._stop_build_host(record)
+        self._record_build_host_usage(build, now)
         if status in SSM_FAILURE:
             rr.end_stage(record, "build", "failed", status, now)
             return self._finish(record, "failed")

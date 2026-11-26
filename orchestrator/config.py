@@ -30,15 +30,13 @@ ENV_OVERRIDES: dict[str, tuple[str | None, str]] = {
 
 @dataclass(frozen=True)
 class BuildConfig:
-    # The build host is found by this tag (PRD 6.8: Role=build-host), started at the build
-    # stage if stopped, stopped when the build ends, and stopped by the sweep when idle longer
-    # than host_idle_stop_seconds (PRD 6.8: 30 minutes).
+    # The build host is found by this tag (PRD 6.8: Role=build-host).
     host_tag: dict[str, str]
-    host_idle_stop_seconds: int
     document: str
     working_directory: str
     commands: list[str]
     execution_timeout_seconds: int = 7200
+    idle_stop_minutes: float = 30
 
 
 @dataclass(frozen=True)
@@ -96,6 +94,10 @@ def load_config(path: str | os.PathLike | None = None) -> Config:
             continue
         target = raw if section is None else raw.setdefault(section, {})
         target[key] = value
+    build = dict(raw["build"])
+    legacy_idle_seconds = build.pop("host_idle_stop_seconds", None)
+    if legacy_idle_seconds is not None and "idle_stop_minutes" not in build:
+        build["idle_stop_minutes"] = legacy_idle_seconds / 60
     deploy = dict(raw["deploy"])
     deploy["bundle_bucket"] = deploy.get("bundle_bucket") or raw["run_bucket"]
     return Config(
@@ -104,7 +106,7 @@ def load_config(path: str | os.PathLike | None = None) -> Config:
         run_bucket=raw["run_bucket"],
         run_prefix=raw["run_prefix"],
         lock_ttl_seconds=int(raw["lock_ttl_seconds"]),
-        build=BuildConfig(**raw["build"]),
+        build=BuildConfig(**build),
         deploy=DeployConfig(**deploy),
         approval=ApprovalConfig(
             topic_arn=raw["approval"]["topic_arn"],

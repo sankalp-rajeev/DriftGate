@@ -138,7 +138,7 @@ Resources:
     Properties:
       Description: >-
         Rejects approvals past their deadline (FR-27), re-checks SSM online status for a
-        build waiting on the build host, and stops the host when idle over 30 minutes
+        build waiting on the build host, and stops the host after build.idle_stop_minutes
       ScheduleExpression: !Ref ApprovalSweepSchedule
       Targets:
         - Id: orchestrator
