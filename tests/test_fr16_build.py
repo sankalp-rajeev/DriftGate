@@ -4,6 +4,7 @@ in build.json, and fails the build on the first failing check (e.g. a manifest h
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -40,6 +41,41 @@ def test_wrong_commit_fails_before_any_check(tmp_path):
     assert build["status"] == "failed"
     assert build["failed_step"] == "commit"
     assert [s["name"] for s in build["steps"]] == ["commit"]
+
+
+def test_build_tests_step_excludes_candidate_suite(tmp_path):
+    cases = tmp_path / "test_selection.py"
+    cases.write_text(
+        "import pytest\n\n"
+        "def test_unit():\n    pass\n\n"
+        "@pytest.mark.candidate_suite\n"
+        "def test_candidate():\n    pytest.fail('candidate suite must not run on the build host')\n"
+    )
+    uv = tmp_path / "uv"
+    uv.write_text(
+        "#!/bin/bash\nset -eu\nshift 2\n"
+        'exec "$TEST_PYTHON" -m pytest "$@" -c "$TEST_CONFIG" '
+        '--confcutdir "$TEST_CASE_DIR" "$TEST_CASES"\n'
+    )
+    uv.chmod(0o755)
+    result = _build(
+        tmp_path / "build",
+        "--commit",
+        HEAD,
+        "--run-id",
+        "selection",
+        steps="tests",
+        env={
+            "PATH": f"{tmp_path}:{os.environ['PATH']}",
+            "TEST_PYTHON": sys.executable,
+            "TEST_CONFIG": str(Path("pyproject.toml").resolve()),
+            "TEST_CASE_DIR": str(tmp_path),
+            "TEST_CASES": str(cases),
+            "PYTEST_ADDOPTS": "",
+        },
+    )
+    assert result.returncode == 0, (tmp_path / "build/tests.log").read_text() + result.stderr
+    assert "1 passed, 1 deselected" in (tmp_path / "build/tests.log").read_text()
 
 
 def _models_present():
