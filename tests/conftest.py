@@ -7,6 +7,23 @@ from orchestrator.config import load_config
 from orchestrator.handler import Orchestrator
 
 
+@pytest.fixture
+def baseline_config(tmp_path):
+    from baseline_serving import write_config
+
+    return write_config(tmp_path / "baseline-config.yaml")
+
+
+@pytest.fixture
+def baseline_workspace(tmp_path, monkeypatch):
+    from baseline_serving import workspace
+
+    path = workspace(tmp_path / "baseline")
+    monkeypatch.chdir(path)
+    monkeypatch.setenv("UV_NO_SYNC", "1")
+    return path
+
+
 @pytest.fixture(autouse=True)
 def isolate_deploy_environment(monkeypatch, tmp_path):
     """Keep host deployment settings out of tests; test fixtures can opt in explicitly."""

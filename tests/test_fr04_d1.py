@@ -5,14 +5,17 @@ import os
 from pathlib import Path
 
 import pytest
+from baseline_serving import MODELS as MODELS_PATH
+from baseline_serving import serving_config
 
 from gate import d1, manifest
 from gate.manifest import load_yaml
 
-CONFIG = load_yaml(Path("serving/config.yaml"))
+CONFIG = serving_config()
 FIXTURES = Path("tests/fixtures/templates")
-REFERENCE_GGUF = Path(load_yaml(Path("serving/models.yaml"))["models_dir"]) / CONFIG["model"]
+REFERENCE_GGUF = Path(load_yaml(MODELS_PATH)["models_dir"]) / CONFIG["model"]
 HAVE_MODEL = REFERENCE_GGUF.exists()
+pytestmark = pytest.mark.usefixtures("baseline_workspace")
 
 
 def test_reference_template_is_pinned_in_the_manifest():

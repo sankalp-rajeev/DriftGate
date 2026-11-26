@@ -100,7 +100,7 @@ def test_metric_names_match_the_alarm_and_dashboard():
 
 
 @pytest.mark.parametrize("gate_exit", [0, 1])
-def test_hook_publish_failure_does_not_change_hook_exit(tmp_path, gate_exit):
+def test_hook_publish_failure_does_not_change_hook_exit(tmp_path, baseline_config, gate_exit):
     """The hook calls the publisher; a CloudWatch failure is logged and the gate decides."""
     from fake_llama import FakeLlama
 
@@ -113,7 +113,8 @@ def test_hook_publish_failure_does_not_change_hook_exit(tmp_path, gate_exit):
     cfg_path = tmp_path / "gate.yaml"
     cfg_path.write_text(json.dumps(gate_cfg))
     with FakeLlama() as server:
-        assert cli.main(["measure", "--gate-config", str(cfg_path), "--server",
+        assert cli.main(["measure", "--config", str(baseline_config),
+                         "--gate-config", str(cfg_path), "--server",
                          f"http://127.0.0.1:{server.port}", "--level", "L1", "--seed", "0",
                          "--out", gate_cfg["reference"]]) == 0  # fmt: skip
         env = {k: v for k, v in os.environ.items() if not k.startswith("DRIFTGATE_")}
@@ -122,6 +123,7 @@ def test_hook_publish_failure_does_not_change_hook_exit(tmp_path, gate_exit):
             DRIFTGATE_INSTANCE_ENV=str(tmp_path / "none.env"),
             DRIFTGATE_APP_DIR=str(ROOT),
             DRIFTGATE_GATE_CONFIG=str(cfg_path),
+            DRIFTGATE_SERVING_CONFIG=str(baseline_config),
             DRIFTGATE_SERVING_PORT=str(server.port),
             DRIFTGATE_RUN_DIR=str(tmp_path / "runs"),
             DRIFTGATE_HEALTH_TIMEOUT_S="4",

@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from baseline_serving import MANIFEST, serving_config, write_config
 
 BUILD = Path("deploy/build.sh")
 HEAD = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
@@ -14,8 +15,11 @@ HEAD = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=Tr
 
 def _build(tmp_path, *args, steps="manifest", env=None):
     full_env = _clean_env(tmp_path) | {"DRIFTGATE_BUILD_STEPS": steps} | (env or {})
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    config = write_config(tmp_path / "baseline.yaml")
+    full_env.setdefault("DRIFTGATE_MANIFEST", str(MANIFEST))
     return subprocess.run(
-        [str(BUILD), *args, "--out", str(tmp_path)],
+        [str(BUILD), *args, "--config", str(config), "--out", str(tmp_path)],
         capture_output=True,
         text=True,
         env=full_env,
@@ -41,8 +45,8 @@ def test_wrong_commit_fails_before_any_check(tmp_path):
 def _models_present():
     from gate import manifest
 
-    cfg = manifest.load_yaml(Path("serving/config.yaml"))
-    return manifest.verify([cfg["model"]])["ok"]
+    cfg = serving_config()
+    return manifest.verify([cfg["model"]], MANIFEST)["ok"]
 
 
 @pytest.mark.skipif(not _models_present(), reason="reference model not downloaded")
@@ -54,7 +58,7 @@ def test_manifest_step_passes_then_fails_on_hash_mismatch(tmp_path):
     assert build["commit"] == HEAD
     assert [s["name"] for s in build["steps"]] == ["commit", "manifest"]
 
-    bad = json.loads(Path("serving/manifest.json").read_text())
+    bad = json.loads(MANIFEST.read_text())
     entry = bad["artifacts"]["qwen2.5-1.5b-instruct-q8_0.gguf"]
     entry["sha256"] = "0" * 64
     (tmp_path / "bad.json").write_text(json.dumps(bad))

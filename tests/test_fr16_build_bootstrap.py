@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from baseline_serving import copy_serving
 
 ROOT = Path(__file__).resolve().parents[1]
 CACHE_URI = (
@@ -28,8 +29,9 @@ def executable(path, script):
 def host(tmp_path, monkeypatch):
     checkout = tmp_path / "driftgate"
     checkout.mkdir()
-    for name in ("deploy", "gate", "observability", "serving"):
+    for name in ("deploy", "gate", "observability"):
         shutil.copytree(ROOT / name, checkout / name)
+    copy_serving(checkout)
     models = {
         "reference": "reference.gguf",
         "ci": "test.gguf",

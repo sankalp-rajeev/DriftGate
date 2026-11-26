@@ -16,17 +16,19 @@ from pathlib import Path
 
 import pytest
 import yaml
+from baseline_serving import MANIFEST, serving_config
+from baseline_serving import MODELS as MODELS_PATH
 
 from gate import manifest, serve
 
-CONFIG = manifest.load_yaml(Path("serving/config.yaml"))
-MODELS = manifest.load_yaml(Path("serving/models.yaml"))
+CONFIG = serving_config()
+MODELS = manifest.load_yaml(MODELS_PATH)
 CI_MODEL = next(m["file"] for m in MODELS["models"] if m["role"] == "ci")
 LLAMA_SERVER = serve.llama_bin_dir() / "llama-server"
 
 pytestmark = pytest.mark.skipif(
     not os.access(LLAMA_SERVER, os.X_OK)
-    or not manifest.verify([CI_MODEL], models_dir=Path(MODELS["models_dir"]))["ok"],
+    or not manifest.verify([CI_MODEL], MANIFEST, models_dir=Path(MODELS["models_dir"]))["ok"],
     reason="needs llama-server and the CI model matching the manifest",
 )
 
@@ -67,7 +69,7 @@ def ci_config(tmp_path):
 
 def _start(path):
     return subprocess.Popen(
-        [sys.executable, "-m", "gate.serve", "--config", str(path)],
+        [sys.executable, "-m", "gate.serve", "--config", str(path), "--manifest", str(MANIFEST)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )

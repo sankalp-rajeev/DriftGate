@@ -3,6 +3,8 @@
 import hashlib
 import json
 
+from baseline_serving import MANIFEST, MODELS
+
 from gate import manifest, models
 
 
@@ -80,8 +82,8 @@ def test_first_download_records_hash_and_later_mismatch_fails(tmp_path):
 
 
 def test_committed_manifest_covers_every_model_in_models_yaml():
-    cfg = manifest.load_yaml(manifest.DEFAULT_MODELS)
-    man = manifest.load_manifest(manifest.DEFAULT_MANIFEST)
+    cfg = manifest.load_yaml(MODELS)
+    man = manifest.load_manifest(MANIFEST)
     for entry in cfg["models"]:
         rec = man["artifacts"][entry["file"]]
         assert len(rec["sha256"]) == 64

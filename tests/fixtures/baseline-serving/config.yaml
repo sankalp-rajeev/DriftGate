@@ -1,0 +1,32 @@
+# Serving config (FR-03): the single versioned file that defines how llama-server runs.
+# Every fault in the ladder (PRD Section 6.3) is a diff to this file or to a file it names:
+#   F1, F2  model                    F6  sampler
+#   F3      cache                    F7  context.ctx_size
+#   F4, F5  chat_template (file)     F8  llama_cpp_lock (file) + rebuild
+#   F9      threads
+# Values not set by the PRD are llama.cpp's own defaults at the pinned build, written out
+# explicitly so that a run is traceable to this file (NFR-07).
+schema_version: 1
+llama_cpp_lock: serving/llama_cpp.lock
+models: serving/models.yaml
+model: qwen2.5-1.5b-instruct-q8_0.gguf
+chat_template: serving/templates/qwen2.5-instruct.jinja
+server:
+  host: 127.0.0.1
+  port: 8080
+  parallel: 1        # single-tenant serving (PRD Section 2, RQ3)
+  metrics: true      # FR-01: Prometheus text on /metrics
+context:
+  ctx_size: 4096     # PRD Section 6.8
+cache:
+  type_k: f16
+  type_v: f16
+  flash_attn: auto
+threads: {local-Sankalps-Razer: 8, t3.large: 2, default: 2}
+sampler:
+  temperature: 0.8
+  top_k: 40
+  top_p: 0.95
+  min_p: 0.05
+  repeat_penalty: 1.0
+  seed: 0

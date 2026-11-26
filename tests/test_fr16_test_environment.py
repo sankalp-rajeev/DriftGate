@@ -24,7 +24,12 @@ def test_suite_ignores_host_settings_but_allows_explicit_test_configuration(tmp_
 
     probe = tmp_path / "suite"
     probe.mkdir()
-    for name in ("conftest.py", "orchestrator_helpers.py", "llama_fixtures.py"):
+    for name in (
+        "conftest.py",
+        "orchestrator_helpers.py",
+        "llama_fixtures.py",
+        "baseline_serving.py",
+    ):
         shutil.copy(ROOT / "tests" / name, probe / name)
     (probe / "test_host_env.py").write_text("""
 import json

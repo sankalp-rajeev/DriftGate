@@ -8,14 +8,16 @@ from pathlib import Path
 
 import pytest
 import yaml
+from baseline_serving import run_gate, serving_config
 from fake_llama import FakeLlama
 
 from gate import cli
 from gate import reference as ref
 from gate.manifest import load_manifest, load_yaml
 
-SERVING = load_yaml(Path("serving/config.yaml"))
+SERVING = serving_config()
 GATE = load_yaml(Path("gate/config.yaml"))
+pytestmark = pytest.mark.usefixtures("baseline_workspace")
 
 
 def _with(**changes):
@@ -110,7 +112,7 @@ def _gate_config(tmp_path, **store):
 def test_print_key_needs_no_server(tmp_path, capsys):
     g = _gate_config(tmp_path, s3_uri="s3://bucket")
     args = ["reference", "--gate-config", str(g), "--instance-type", "t3.large", "--print-key"]
-    assert cli.main(args) == 0
+    assert run_gate(args) == 0
     out = json.loads(capsys.readouterr().out)
     key = ref.reference_key(SERVING, "t3.large")
     assert out == {"key": key, "local_dir": str(tmp_path / key), "s3_uri": f"s3://bucket/{key}"}
@@ -126,7 +128,7 @@ def test_reference_measures_and_stores_under_the_key_without_upload(tmp_path, mo
     with FakeLlama() as server:
         url = f"http://127.0.0.1:{server.port}"
         args = ["reference", "--gate-config", str(g), "--server", url, "--seed", "0"]
-        assert cli.main(args + ["--budget", "4", "--instance-type", "t3.large"]) == 0
+        assert run_gate(args + ["--budget", "4", "--instance-type", "t3.large"]) == 0
 
         key = ref.reference_key(SERVING, "t3.large")
         path = tmp_path / key / "measurement.json"
@@ -140,7 +142,7 @@ def test_reference_measures_and_stores_under_the_key_without_upload(tmp_path, mo
         # The gate finds it through the same key: no --reference needed.
         out = tmp_path / "verdict.json"
         run = ["run", "--gate-config", str(g), "--server", url, "--budget", "4", "--seed", "0"]
-        assert cli.main(run + ["--instance-type", "t3.large", "--out", str(out)]) == 0
+        assert run_gate(run + ["--instance-type", "t3.large", "--out", str(out)]) == 0
     v = json.loads(out.read_text())
     assert v["detectors"]["D3"]["mean_agreement_share"] == 1.0
     assert v["decision"]["mode"] == "report"
@@ -164,7 +166,7 @@ def test_reference_budget_uses_instance_type_unless_overridden(
     location = ["--reference-key", key] if use_key else ["--instance-type", instance]
     budget = [] if budget_override is None else ["--budget", str(budget_override)]
     with FakeLlama() as server:
-        assert cli.main(
+        assert run_gate(
             ["reference", "--gate-config", str(g),
              "--server", f"http://127.0.0.1:{server.port}", "--seed", "0", *location, *budget]
         ) == 0  # fmt: skip
@@ -185,10 +187,10 @@ def test_upload_only_with_explicit_flag(tmp_path, monkeypatch):
         url = f"http://127.0.0.1:{server.port}"
         base = ["reference", "--gate-config", str(g), "--server", url, "--seed", "0"]
         base += ["--budget", "2", "--instance-type", "t3.large"]
-        assert cli.main(base + ["--upload"]) == 2  # no S3 URI configured
-        assert cli.main(base + ["--s3-uri", "s3://bkt/"]) == 0
+        assert run_gate(base + ["--upload"]) == 2  # no S3 URI configured
+        assert run_gate(base + ["--s3-uri", "s3://bkt/"]) == 0
         assert not calls
-        assert cli.main(base + ["--upload", "--s3-uri", "s3://bkt/"]) == 0
+        assert run_gate(base + ["--upload", "--s3-uri", "s3://bkt/"]) == 0
     key = ref.reference_key(SERVING, "t3.large")
     assert calls == [
         [
@@ -209,7 +211,7 @@ def test_missing_reference_is_an_input_error(tmp_path):
     cand = tmp_path / "cand.json"
     cand.write_text("{}")
     args = ["compare", "--gate-config", str(g), "--candidate", str(cand)]
-    assert cli.main(args + ["--instance-type", "nowhere"]) == 2
+    assert run_gate(args + ["--instance-type", "nowhere"]) == 2
 
 
 def test_candidates_use_the_baseline_key(tmp_path):
@@ -237,6 +239,6 @@ def test_baseline_rejects_malformed_hashes(tmp_path):
 
 def test_reference_is_only_written_from_the_baseline_config(tmp_path):
     g = _gate_config(tmp_path)
-    serving = load_yaml(Path("serving/config.yaml"))
+    serving = serving_config()
     serving["sampler"]["temperature"] = 1.3
     assert not ref.is_baseline(load_yaml(g), serving)

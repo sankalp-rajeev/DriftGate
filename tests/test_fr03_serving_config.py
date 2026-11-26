@@ -10,12 +10,14 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from baseline_serving import MODELS as MODELS_PATH
+from baseline_serving import serving_config
 
 from gate import serve
 from gate.manifest import load_yaml
 
-CONFIG = load_yaml(Path("serving/config.yaml"))
-MODELS = load_yaml(Path("serving/models.yaml"))
+CONFIG = serving_config()
+MODELS = load_yaml(MODELS_PATH)
 BIN = Path("/opt/llama/bin")
 
 
