@@ -3,8 +3,12 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from faults import aa, inject
 from gate import cli, d1, d2
+
+pytestmark = pytest.mark.usefixtures("baseline_workspace")
 
 
 def _args(out, bundle, **kw):

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from baseline_serving import run_gate
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from gate import telemetry
@@ -134,7 +135,7 @@ def test_gate_cli_emits_d6_span_and_verdict_gauges(tmp_path, monkeypatch):
     data_before_shutdown = []
     real_shutdown = tel.shutdown
     tel.shutdown = lambda: (data_before_shutdown.append(reader.get_metrics_data()), real_shutdown())
-    assert cli.main(files, tel=tel) == 0
+    assert run_gate(files, tel=tel) == 0
     names = [s.name for s in exporter.get_finished_spans()]
     assert names == ["gate.D6", "gate.cli.compare"]
     (data,) = data_before_shutdown

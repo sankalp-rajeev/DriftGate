@@ -2,6 +2,7 @@
 .PHONY: help setup test lint fmt models verify serve gate reference fault study study-status up down storage-up storage-down obs-up obs-down orchestrator-zip unlock
 .PHONY: codecommit-push cd-up cd-down orch-up session-down lab-status
 .PHONY: demo-push demo-reset session-up pipeline-status
+.PHONY: check-baseline-fixture
 
 # Keep the project venv isolated from any PYTHONPATH set by the shell (e.g. a sourced ROS setup).
 STOP_AT ?=
@@ -32,6 +33,9 @@ setup: ## Create the environment and install dependencies
 
 test: ## Run the test suite
 	uv run pytest -q
+
+check-baseline-fixture: ## Check baseline test data against the approved model and config hashes (CI only)
+	uv run python -m analysis.check_baseline_fixture
 
 lint: ## Run ruff (lint and format check)
 	uv run ruff check . && uv run ruff format --check .

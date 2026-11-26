@@ -7,12 +7,14 @@ from pathlib import Path
 
 import pytest
 import yaml
+from baseline_serving import CONFIG as BASELINE_CONFIG
 
 from faults import inject
 from gate import serve
 from gate.manifest import load_yaml
 
-REF = load_yaml(Path("serving/config.yaml"))
+REF = load_yaml(BASELINE_CONFIG)
+pytestmark = pytest.mark.usefixtures("baseline_workspace")
 
 
 def _bundle(tmp_path, fault):

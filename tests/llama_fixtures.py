@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pytest
 import yaml
+from baseline_serving import MANIFEST, serving_config
+from baseline_serving import MODELS as MODELS_PATH
 
 from gate import manifest, serve
 
@@ -36,12 +38,12 @@ def _healthy(base):
 
 
 def ci_model_available() -> bool:
-    models = manifest.load_yaml(Path("serving/models.yaml"))
+    models = manifest.load_yaml(MODELS_PATH)
     ci = next(m["file"] for m in models["models"] if m["role"] == "ci")
     binary = serve.llama_bin_dir() / "llama-server"
     if not os.access(binary, os.X_OK):
         return False
-    return manifest.verify([ci], models_dir=Path(models["models_dir"]))["ok"]
+    return manifest.verify([ci], MANIFEST, models_dir=Path(models["models_dir"]))["ok"]
 
 
 @pytest.fixture(scope="module")
@@ -49,15 +51,15 @@ def ci_server(tmp_path_factory):
     """Base URL of a llama-server running the CI model from the serving config."""
     if not ci_model_available():
         pytest.skip("needs llama-server and the CI model matching the manifest")
-    config = manifest.load_yaml(Path("serving/config.yaml"))
-    models = manifest.load_yaml(Path("serving/models.yaml"))
+    config = serving_config()
+    models = manifest.load_yaml(MODELS_PATH)
     ci = next(m["file"] for m in models["models"] if m["role"] == "ci")
     cfg = dict(config, model=ci, threads=DEV_THREADS)
     cfg["server"] = dict(config["server"], port=_free_port())
     path = tmp_path_factory.mktemp("ci") / "config.yaml"
     path.write_text(yaml.safe_dump(cfg))
     proc = subprocess.Popen(
-        [sys.executable, "-m", "gate.serve", "--config", str(path)],
+        [sys.executable, "-m", "gate.serve", "--config", str(path), "--manifest", str(MANIFEST)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )

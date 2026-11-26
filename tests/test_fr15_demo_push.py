@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from baseline_serving import copy_serving
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -22,8 +23,9 @@ def demo(tmp_path):
     git(repo, "init", "-b", "main")
     git(repo, "config", "user.email", "test@example.org")
     git(repo, "config", "user.name", "Demo Test")
-    for name in ("faults", "serving", "gate"):
+    for name in ("faults", "gate"):
         shutil.copytree(ROOT / name, repo / name, ignore=shutil.ignore_patterns("__pycache__"))
+    copy_serving(repo)
     for name in ("pyproject.toml", "uv.lock", "Makefile", "README.md"):
         shutil.copy(ROOT / name, repo / name)
     git(repo, "add", ".")

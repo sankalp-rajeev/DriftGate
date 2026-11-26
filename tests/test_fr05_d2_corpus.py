@@ -5,6 +5,7 @@ import urllib.request
 from pathlib import Path
 
 import pytest
+from baseline_serving import serving_config
 
 from analysis import detector_data as dd
 from gate.manifest import load_yaml
@@ -39,7 +40,7 @@ def test_committed_corpus_is_wikitext2_test_start():
 
 
 def _reference_server():
-    cfg = load_yaml(Path("serving/config.yaml"))
+    cfg = serving_config()
     base = f"http://{cfg['server']['host']}:{cfg['server']['port']}"
     try:
         with urllib.request.urlopen(base + "/props", timeout=2) as r:

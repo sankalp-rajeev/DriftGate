@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from baseline_serving import run_gate, write_config
 from fake_llama import FakeLlama
 
 from gate import cli
@@ -108,6 +109,7 @@ def sandbox(tmp_path):
     gate_cfg_path = tmp_path / "gate.yaml"
     gate_cfg_path.write_text(yaml.safe_dump(gate_cfg))
     run_dir = tmp_path / "runs"
+    serving = write_config(tmp_path / "baseline-serving.yaml")
 
     def env(port, **extra):
         e = {k: v for k, v in os.environ.items() if not k.startswith("DRIFTGATE_")}
@@ -116,6 +118,7 @@ def sandbox(tmp_path):
             DRIFTGATE_INSTANCE_ENV=str(tmp_path / "no-instance.env"),
             DRIFTGATE_APP_DIR=str(ROOT),
             DRIFTGATE_GATE_CONFIG=str(gate_cfg_path),
+            DRIFTGATE_SERVING_CONFIG=str(serving),
             DRIFTGATE_SERVING_PORT=str(port),
             DRIFTGATE_RUN_DIR=str(run_dir),
             DRIFTGATE_HEALTH_TIMEOUT_S="4",
@@ -130,7 +133,7 @@ def sandbox(tmp_path):
 
     def measure_reference(port, *budget_args):
         budget_args = budget_args or ("--level", "L1")
-        rc = cli.main(
+        rc = run_gate(
             ["measure", "--gate-config", str(gate_cfg_path), "--server",
              f"http://127.0.0.1:{port}", *budget_args, "--seed", "0",
              "--out", gate_cfg["reference"]]

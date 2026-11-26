@@ -8,6 +8,7 @@ import math
 from pathlib import Path
 
 import pytest
+from baseline_serving import run_gate
 from fake_llama import FakeLlama
 
 from gate import cli
@@ -150,7 +151,7 @@ def test_gate_run_persists_http_errors_and_blocks_candidate(tmp_path, failed_req
     measurement, verdict = tmp_path / "measurement.json", tmp_path / "verdict.json"
     with FakeLlama(errors={failed_request: (400, "context too small")}) as broken:
         assert (
-            cli.main(
+            run_gate(
                 [
                     "run",
                     "--gate-config",
@@ -183,7 +184,7 @@ def test_reference_request_errors_are_never_saved_as_baseline(tmp_path):
     (tmp_path / "gate.yaml").write_text(json.dumps(cfg))
     with FakeLlama(errors={1: (400, "context too small")}) as broken:
         assert (
-            cli.main(
+            run_gate(
                 [
                     "reference",
                     "--gate-config",
@@ -242,7 +243,7 @@ def test_committed_config_enforces_the_lab_thresholds():
 
 def test_report_mode_records_verdict_and_exits_zero(tmp_path, monkeypatch):
     monkeypatch.delenv(cli.FORCE_FAIL_ENV, raising=False)
-    assert cli.main(_files(tmp_path)) == 0
+    assert run_gate(_files(tmp_path)) == 0
     v = json.loads((tmp_path / "verdict.json").read_text())
     _check_schema(v)
     assert v["decision"]["mode"] == "report"
@@ -256,12 +257,12 @@ def test_report_mode_records_verdict_and_exits_zero(tmp_path, monkeypatch):
 def test_auto_switches_to_enforce_when_thresholds_exist(tmp_path, monkeypatch):
     monkeypatch.delenv(cli.FORCE_FAIL_ENV, raising=False)
     # Placeholder rule values chosen only to exercise pass and fail; not calibrated thresholds.
-    assert cli.main(_files(tmp_path, thresholds=_thresholds(0.0))) == 0
+    assert run_gate(_files(tmp_path, thresholds=_thresholds(0.0))) == 0
     v = json.loads((tmp_path / "verdict.json").read_text())
     assert v["decision"]["mode"] == "enforce"
     assert v["decision"]["passed"] is True
     assert v["decision"]["gate_score"] == pytest.approx((1 - 2 / 3) / 1)
-    assert cli.main(_files(tmp_path, thresholds=_thresholds(0.9))) == 1
+    assert run_gate(_files(tmp_path, thresholds=_thresholds(0.9))) == 1
     v = json.loads((tmp_path / "verdict.json").read_text())
     assert v["decision"]["passed"] is False
     assert v["decision"]["scores"] == {"D3": pytest.approx((1 - 2 / 3) / 0.1)}
@@ -271,14 +272,14 @@ def test_auto_switches_to_enforce_when_thresholds_exist(tmp_path, monkeypatch):
 
 def test_enforce_without_thresholds_file_is_an_error(tmp_path, monkeypatch):
     monkeypatch.delenv(cli.FORCE_FAIL_ENV, raising=False)
-    assert cli.main(_files(tmp_path, mode="enforce")) == 2
+    assert run_gate(_files(tmp_path, mode="enforce")) == 2
 
 
 @pytest.mark.parametrize(("mode", "thresholds"), [("report", None), ("auto", 0.0)])
 def test_force_fail_env_exits_nonzero_in_either_mode(tmp_path, monkeypatch, mode, thresholds):
     monkeypatch.setenv(cli.FORCE_FAIL_ENV, "1")
     t = None if thresholds is None else _thresholds(thresholds)
-    assert cli.main(_files(tmp_path, mode=mode, thresholds=t)) == 1
+    assert run_gate(_files(tmp_path, mode=mode, thresholds=t)) == 1
     v = json.loads((tmp_path / "verdict.json").read_text())
     assert v["decision"]["forced_fail"] is True
 

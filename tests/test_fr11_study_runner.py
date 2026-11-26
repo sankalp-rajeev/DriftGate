@@ -8,6 +8,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from baseline_serving import CONFIG as BASELINE_CONFIG
 
 from analysis import study
 from gate.llama_client import detector_error
@@ -333,7 +334,7 @@ def _complete_fault(directory, fault="F7", error=False):
     """A known complete L3 record without any model execution."""
     directory.mkdir(parents=True)
     path = directory / "run-00.json"
-    inputs = {"config_sha256": study.sha256(Path("serving/config.yaml"))}
+    inputs = {"config_sha256": study.sha256(BASELINE_CONFIG)}
     m = {
         "schema": "driftgate.measurement/1",
         "seed": 0,
