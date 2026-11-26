@@ -31,7 +31,7 @@
       "policy": "approval-lambda.json",
       "status": "documented-only",
       "applied_in": null,
-      "lab_reality": "Runs as LabRole. Runs Orchestrator.decide in-process: approve starts the deployment; reject or timeout ends the run and starts the queued build, so it needs the same S3, SSM and CodeDeploy calls (no SNS)"
+      "lab_reality": "Runs as LabRole. Orchestrator.decide starts CodeDeploy on approval and ends the run on rejection or timeout."
     },
     {
       "id": "iam-build-host",

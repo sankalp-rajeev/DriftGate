@@ -9,18 +9,12 @@ import sys
 import boto3
 
 from orchestrator.config import load_config
+from orchestrator.run_record import run_record_keys
 
 
 def pipeline_status(s3, bucket: str, prefix: str = "runs/") -> dict:
-    prefix = prefix.rstrip("/") + "/"
-    keys = (
-        obj["Key"]
-        for page in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix)
-        for obj in page.get("Contents", [])
-        if len(obj["Key"][len(prefix) :].split("/")) == 2 and obj["Key"].endswith("/run.json")
-    )
     # Run ids start with YYYYMMDDTHHMMSSZ. LastModified would prefer an old run updated later.
-    key = max(keys, default=None)
+    key = max(run_record_keys(s3, bucket, prefix), default=None)
     if key is None:
         return {"schema": "driftgate.pipeline-status/1", "run_id": None, "status": "no_runs"}
     record = json.loads(s3.get_object(Bucket=bucket, Key=key)["Body"].read())

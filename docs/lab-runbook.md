@@ -5,6 +5,21 @@ Use GitHub `main` after the Phase 3+4 prep PR is merged. The Lab repository defa
 `driftgate`; if it has a different name, set the same `REPOSITORY_NAME` for
 `codecommit-push`, `cd-up` and `orch-up`.
 
+## December 2 demo startup
+
+The existing network stack owns the ALB URL printed in the slides. Use that stack
+for the demo.
+
+1. Start the Learner Lab and wait for the session to be ready.
+2. Load the new session's temporary AWS credentials into your shell.
+3. From the updated checkout, run `make serve-baseline`. It runs `cd-up` against
+   the existing network, resumes the serving instances if needed, and deploys the
+   last successful revision directly with CodeDeploy. If the deployment group
+   was recreated, it uses the last successful pipeline bundle recorded in S3.
+   After CodeDeploy succeeds it prints the existing ALB URL.
+4. Check the printed URL with `curl -fsS http://<ALB-DNS>/health`. Expect
+   `{"status":"ok"}` before opening the URL from the slides.
+
 ## Start the session
 
 1. Start Learner Lab and load its temporary AWS credentials into your shell. Install

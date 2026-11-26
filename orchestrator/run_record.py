@@ -6,15 +6,13 @@ Layout under `<run_prefix>`:
                                  run ends. Past expires_at (2 h) it is stale: the next run replaces
                                  it (If-Match on its ETag) and the old run is marked abandoned
   build-host.json                {"instance_id", "last_used_at"} for the idle-stop sweep
-  queued.json                    the latest push that arrived during the active run (a newer
-                                 push replaces it); started when the lock is released
   <run_id>/run.json              the run record (schema below)
   <run_id>/build-log/...         SSM Run Command output (written by SSM)
   index/<kind>/<key>.json        pointer {"run_id": ...} from an external id to its run
                                  (kinds: event, ssm, codedeploy, approval-pending)
 
 Run record schema (version 1):
-  schema_version, run_id, status (running|succeeded|failed|abandoned), current_stage,
+  schema_version, run_id, status (running|succeeded|failed|abandoned|rejected-busy), current_stage,
   created_at, updated_at, ended_at (null while running),
   trigger {repository, branch, commit_id, event_id, event_time},
   stages [{name, status (pending|running|succeeded|failed|skipped|abandoned),
@@ -25,6 +23,7 @@ Timestamps are ISO 8601 UTC.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -37,6 +36,15 @@ LOCK_CONFLICT_CODES = ("PreconditionFailed", "ConditionalRequestConflict")
 
 def iso(t: datetime) -> str:
     return t.isoformat(timespec="seconds")
+
+
+def run_record_keys(s3, bucket: str, prefix: str) -> Iterator[str]:
+    prefix = prefix.rstrip("/") + "/"
+    for page in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            key = obj["Key"]
+            if len(key[len(prefix) :].split("/")) == 2 and key.endswith("/run.json"):
+                yield key
 
 
 def new_record(
@@ -131,6 +139,8 @@ def abandon_run(record: dict[str, Any], reason: str, now: datetime) -> None:
 class LockResult:
     acquired: bool
     stale: dict[str, Any] | None = None  # the expired lock that was taken over, if any
+    held_by: str | None = None
+    event_id: str | None = None
 
     def __bool__(self) -> bool:
         return self.acquired
@@ -202,10 +212,6 @@ class RunStore:
     def lock_key(self) -> str:
         return f"{self.prefix}active.json"
 
-    @property
-    def queue_key(self) -> str:
-        return f"{self.prefix}queued.json"
-
     def _put_lock(self, body: dict[str, Any], **condition: str) -> bool:
         try:
             self.s3.put_object(
@@ -229,11 +235,14 @@ class RunStore:
             seconds=self.lock_ttl_seconds
         )
 
-    def acquire_lock(self, run_id: str, now: datetime) -> LockResult:
+    def acquire_lock(
+        self, run_id: str, now: datetime, *, event_id: str | None = None
+    ) -> LockResult:
         """Take `active.json` if absent (If-None-Match: *), or replace it if it has expired
         (If-Match on the ETag read, so two runs cannot both take over the same stale lock)."""
         body = {
             "run_id": run_id,
+            "event_id": event_id,
             "acquired_at": iso(now),
             "expires_at": iso(now + timedelta(seconds=self.lock_ttl_seconds)),
         }
@@ -242,11 +251,11 @@ class RunStore:
         try:
             obj = self.s3.get_object(Bucket=self.bucket, Key=self.lock_key)
         except self.s3.exceptions.NoSuchKey:
-            # Released between our put and our read: try once more as a fresh lock.
-            return LockResult(self._put_lock(body, IfNoneMatch="*"))
+            # The first put saw a held lock, even if the holder has since released it.
+            return LockResult(False)
         current = json.loads(obj["Body"].read())
         if now < self.lock_expires_at(current):
-            return LockResult(False)
+            return LockResult(False, held_by=current["run_id"], event_id=current.get("event_id"))
         if self._put_lock(body, IfMatch=obj["ETag"]):
             return LockResult(True, stale=current)
         return LockResult(False)
@@ -287,15 +296,6 @@ class RunStore:
         if host and self.lookup("host-wait", host) == run_id:
             self.delete_index("host-wait", host)
         return True
-
-    def queued(self) -> dict[str, Any] | None:
-        return self._get_json(self.queue_key)
-
-    def put_queued(self, entry: dict[str, Any]) -> None:
-        self._put_json(self.queue_key, entry)
-
-    def clear_queued(self) -> None:
-        self.s3.delete_object(Bucket=self.bucket, Key=self.queue_key)
 
     def lookup(self, kind: str, key: str) -> str | None:
         found = self._get_json(self._index_key(kind, key))

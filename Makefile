@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 .PHONY: help setup test lint fmt models verify serve gate reference fault study study-status up down storage-up storage-down obs-up obs-down orchestrator-zip unlock
-.PHONY: codecommit-push cd-up cd-down orch-up session-down lab-status
+.PHONY: codecommit-push cd-up cd-down orch-up session-down lab-status serve-baseline
 .PHONY: demo-push demo-reset session-up pipeline-status
 .PHONY: check-baseline-fixture
 
@@ -113,6 +113,12 @@ cd-up: ## Create or update the CodeDeploy stack and the three EC2 instances
 		--template-file "$(CFN_DIR)/codedeploy.yaml" --tags Project=driftgate --no-fail-on-empty-changeset \
 		--parameter-overrides "NetworkStackName=$(STACK_NAME)" "BucketName=$$bucket" \
 		"LabRoleArn=arn:aws:iam::$$account:role/LabRole" "RepositoryName=$(REPOSITORY_NAME)"
+
+serve-baseline: ## Redeploy the last successful revision behind the existing ALB (Lab only)
+	$(MAKE) cd-up
+	uv run python -m orchestrator.serve_baseline --region "$(AWS_REGION)" \
+		--network-stack "$(STACK_NAME)" --cd-stack "$(CD_STACK_NAME)" \
+		--storage-stack "$(STORAGE_STACK_NAME)"
 
 cd-down: ## Delete CodeDeploy and EC2 instances, then wait for stack deletion
 	aws cloudformation delete-stack --region "$(AWS_REGION)" --stack-name "$(CD_STACK_NAME)" && \

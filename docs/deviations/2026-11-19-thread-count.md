@@ -41,3 +41,6 @@ from the updated config and fault definitions.
 
 All other pre-registered detector definitions, data, budgets, seeds, repetition rules,
 calibration rules and analyses remain unchanged. The study is not started by this fix.
+
+The 26 November Lab check for the t3.large 2 → 1 change is recorded in the
+[F9 measured result](2026-11-24-t3large-thresholds.md#f9-measured-result-26-november-2026).

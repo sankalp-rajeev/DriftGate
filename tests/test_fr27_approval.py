@@ -11,7 +11,6 @@ import pytest
 from orchestrator_helpers import (
     APPROVAL_URL,
     build_succeeds,
-    host_comes_up,
     links_from,
     push_event,
     read_record,
@@ -143,8 +142,8 @@ def test_scheduled_sweep_rejects_expired_approvals_only(pipeline):
     old = started_run(pipeline)
     clock.advance(pipeline["cfg"].approval.timeout_seconds - 60)
     assert orc.handle(scheduled_event())["expired"] == []
-    # A push during the pending approval queues; the timeout ends the old run and starts it.
-    assert orc.handle(push_event(event_id="evt-2", commit="f" * 40))["action"] == "queued"
+    busy = push_event(event_id="evt-2", commit="f" * 40)
+    assert orc.handle(busy)["action"] == "rejected-busy"
 
     clock.advance(60)
     out = orc.handle(scheduled_event())
@@ -153,9 +152,9 @@ def test_scheduled_sweep_rejects_expired_approvals_only(pipeline):
     assert rec["status"] == "failed"
     assert stage(rec, "approval")["outcome"] == "timeout"
     assert stage(rec, "approval")["details"]["decision"] == "timeout"
-    fresh = pipeline["orc"].store.lock_holder()
-    assert fresh and fresh != old
-    host_comes_up(pipeline)
+    assert orc.store.lock_holder() is None
+    assert orc.handle(busy)["action"] == "ignored"
+    fresh = orc.handle(push_event(event_id="evt-3", commit="f" * 40))["run_id"]
     build_succeeds(pipeline, fresh)
     # The fresh approval is within its window, so the next sweep leaves it alone.
     assert orc.handle(scheduled_event())["expired"] == []
