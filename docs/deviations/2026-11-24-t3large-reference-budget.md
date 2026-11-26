@@ -59,3 +59,13 @@ generic AVX-512 build and the matching L1 reference prefix for D6.
 The [Lab threshold deviation](2026-11-24-t3large-thresholds.md) authorizes
 L1 enforcement with the existing laptop latency rule; it does not claim
 that six Lab observations satisfy the original max-of-20 calibration rule.
+
+## Session 3 early stop
+
+The owner authorized enforce-mode `gate run` to measure D3 first, derive D6 from its request
+timings and skip D5 when a D3 or D6 rule score is already above 1. The verdict then records
+`early_stop: true` and D5 `{"status": "not run", "reason": "early stop"}`; measured metrics are
+published and the hook exits 1. Early stop only skips work after the verdict is decided: the
+decision rule, thresholds, prompt budgets and alpha are unchanged. Report mode always runs
+everything, and passing D3/D6 results continue to D5. ValidateService's ceiling increases from
+900 to 1,800 seconds so slow candidates that pass can finish L1; the 600-second target remains.

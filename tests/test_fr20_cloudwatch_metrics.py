@@ -56,6 +56,17 @@ def test_enforce_mode_publishes_gate_score_and_raw_values():
     assert data[0]["Dimensions"] == [{"Name": "DeploymentGroup", "Value": GROUP}]
 
 
+def test_early_stop_publishes_gate_score_and_measured_metrics():
+    v = verdict("enforce", gate_score=2.0)
+    v["early_stop"] = True
+    v["detectors"]["D5"] = {"status": "not run", "reason": "early stop"}
+    data = pm.metric_data(v, CONFIG, GROUP)
+    assert data[0]["MetricName"] == "GateScore" and data[0]["Value"] == 2.0
+    assert any(name.startswith("D3") for name in names(data))
+    assert any(name.startswith("D6") for name in names(data))
+    assert not any(name.startswith("D5") for name in names(data))
+
+
 def test_report_mode_never_publishes_gate_score_even_if_present():
     assert "GateScore" not in names(pm.metric_data(verdict("report", 9.0), CONFIG, GROUP))
 

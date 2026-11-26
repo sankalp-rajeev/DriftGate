@@ -48,9 +48,9 @@ def test_appspec_hook_scripts_exist_and_are_executable():
         assert entry["runas"] == "root"
 
 
-def test_validate_service_timeout_within_nfr01_kill_limit():
+def test_validate_service_timeout_allows_30_minutes_for_slow_passing_candidates():
     [entry] = load_appspec()["hooks"]["ValidateService"]
-    assert entry["timeout"] <= 15 * 60
+    assert entry["timeout"] == 1800
 
 
 def test_appspec_installs_to_the_configured_app_dir():
@@ -222,11 +222,19 @@ def test_validate_service_fails_if_any_lab_detector_exceeds_threshold(sandbox, d
     with Session2Server(recorded, "candidate", fault=detector) as candidate:
         result = run_hook("validate_service.sh", sandbox["env"](candidate.port))
     assert result.returncode == 1, result.stderr
-    decision = json.loads(sandbox["verdict"].read_text())["decision"]
+    verdict = json.loads(sandbox["verdict"].read_text())
+    decision = verdict["decision"]
     assert decision["mode"] == "enforce"
     assert decision["passed"] is False
     assert decision["scores"][detector] > 1
     assert all(value <= 1 for key, value in decision["scores"].items() if key != detector)
+    if detector in {"D3", "D6"}:
+        assert verdict["early_stop"] is True
+        assert verdict["detectors"]["D5"] == {"status": "not run", "reason": "early stop"}
+        measurement = json.loads((sandbox["verdict"].parent / "measurement.json").read_text())
+        assert measurement["d5"] == []
+    else:
+        assert verdict.get("early_stop", False) is False
 
 
 def write_thresholds(path):

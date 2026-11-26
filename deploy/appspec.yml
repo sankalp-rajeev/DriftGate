@@ -1,7 +1,7 @@
 # CodeDeploy AppSpec for the serving instances (FR-17, FR-18). deploy/build.sh (T-11) copies this
 # file to the root of the revision bundle; hook paths are relative to that root.
 # Timeouts: AfterInstall may build llama.cpp and download a model on the first deploy;
-# ValidateService is bounded by NFR-01 (gate killed at 15 minutes).
+# ValidateService has the owner-authorized 30-minute ceiling for slow passing candidates.
 version: 0.0
 os: linux
 files:
@@ -27,5 +27,5 @@ hooks:
       runas: root
   ValidateService:
     - location: deploy/hooks/validate_service.sh
-      timeout: 900
+      timeout: 1800
       runas: root
