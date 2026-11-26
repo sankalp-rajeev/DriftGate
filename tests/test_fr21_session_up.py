@@ -3,6 +3,7 @@
 import base64
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -33,7 +34,8 @@ case "$1 $2" in
   *) exit 99 ;;
 esac
 """,
-        "git": 'exit "${GIT_STATUS:-0}"\n',
+        "git": 'if [[ -n "${TEST_REAL_GIT:-}" ]]; then exec "$TEST_REAL_GIT" "$@"; fi\n'
+        'exit "${GIT_STATUS:-0}"\n',
         "make": 'exit "${MAKE_STATUS:-0}"\n',
         "sleep": "exit 0\n",
         "date": r"""
@@ -46,11 +48,11 @@ echo "$value"
         path.write_text('#!/bin/bash\nset -eu\necho "${0##*/} $*" >> "$CALLS"\n' + body)
         path.chmod(0o755)
 
-    def run(**extra):
+    def run(cwd=ROOT, **extra):
         log.write_text("")
         result = subprocess.run(
             ["bash", str(ROOT / "scripts/lab_session_up.sh")],
-            cwd=ROOT,
+            cwd=cwd,
             env=os.environ
             | {
                 "PATH": f"{tmp_path}:{os.environ['PATH']}",
@@ -69,12 +71,64 @@ echo "$value"
     return run
 
 
+@pytest.mark.parametrize("state", ["fault", "same-tree", "empty"])
+def test_session_up_syncs_codecommit_without_rewriting_demo_history(session, tmp_path, state):
+    git = shutil.which("git")
+    repo = tmp_path / "checkout"
+    repo.mkdir()
+
+    def run_git(*args):
+        return subprocess.check_output([git, "-C", str(repo), *args], text=True).strip()
+
+    run_git("init", "-b", "main")
+    run_git("config", "user.name", "Session Test")
+    run_git("config", "user.email", "test@example.org")
+    (repo / "config.txt").write_text("baseline")
+    run_git("add", ".")
+    run_git("commit", "-m", "baseline")
+    base = run_git("rev-parse", "HEAD")
+    for remote in ("origin", "codecommit"):
+        path = tmp_path / remote
+        subprocess.run(
+            [git, "clone", "--bare", str(repo), str(path)], check=True, capture_output=True
+        )
+        run_git("remote", "add", remote, str(path))
+    if state == "empty":
+        subprocess.run(
+            [git, "--git-dir", str(tmp_path / "codecommit"), "update-ref", "-d", "refs/heads/main"],
+            check=True,
+        )
+        parent = None
+    else:
+        if state == "fault":
+            (repo / "config.txt").write_text("fault")
+            run_git("add", ".")
+        run_git("commit", "--allow-empty", "-m", "demo")
+        run_git("push", "codecommit", "HEAD:main")
+        parent = run_git("rev-parse", "HEAD")
+    before = run_git("rev-parse", "HEAD")
+    result, _, _ = session(cwd=repo, TEST_REAL_GIT=git)
+    assert result.returncode == 0, result.stderr
+    tip = run_git("ls-remote", "codecommit", "refs/heads/main").split()[0]
+    assert run_git("rev-parse", f"{tip}^{{tree}}") == run_git("rev-parse", f"{base}^{{tree}}")
+    assert run_git("rev-parse", "HEAD") == before
+    if state == "fault":
+        assert run_git("rev-parse", f"{tip}^") == parent
+        assert "expected" in result.stdout.lower()
+        assert "reject" in result.stdout.lower() and "approval email" in result.stdout.lower()
+    elif state == "same-tree":
+        assert tip == parent  # an already restored demo history needs no push
+    else:
+        assert tip == base
+
+
 def test_session_up_orders_push_and_stacks_then_waits_for_ready(session):
     result, calls, parameters = session()
     assert result.returncode == 0, result.stderr
     assert calls[0].startswith("aws sts get-caller-identity")
-    assert calls[1:3] == [
+    assert calls[1:4] == [
         "git fetch origin main",
+        "git ls-remote codecommit refs/heads/main",
         "git push codecommit refs/remotes/origin/main:refs/heads/main",
     ]
     assert [call for call in calls if call.startswith("make ")] == [

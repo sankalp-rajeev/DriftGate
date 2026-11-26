@@ -29,6 +29,7 @@ import json
 import os
 import sys
 import time
+from collections.abc import Callable
 from contextlib import nullcontext
 from pathlib import Path
 
@@ -36,7 +37,7 @@ from gate import d3, d5, d6, telemetry
 from gate import reference as ref_store
 from gate.llama_client import LlamaServer, RequestError
 from gate.manifest import load_yaml
-from gate.score import THRESHOLDS_SCHEMA, ZERO_MARGIN_SCORE, score
+from gate.score import THRESHOLDS_SCHEMA, ZERO_MARGIN_SCORE, score, validate
 
 MEASUREMENT_SCHEMA = "driftgate.measurement/1"
 VERDICT_SCHEMA = "driftgate.verdict/2"
@@ -79,10 +80,12 @@ def measure(
     tel=None,
     d5_budget: int | None = None,
     skip_d3: bool = False,
+    stop_after_d3: Callable[[list[dict]], bool] | None = None,
 ) -> dict:
     """`budget` D3 prompts and `d5_budget` D5 items (default: `budget`), both file prefixes.
 
     `skip_d3` leaves D3 empty (the RQ2 quantization sweep measures D5 only).
+    `stop_after_d3` is used by enforced runs to skip D5 after a decisive failure.
     """
     prompts = _jsonl(prompts_path)
     panel = _jsonl(panel_path)
@@ -110,12 +113,16 @@ def measure(
             )
         )
     t1 = time.monotonic()
-    with _span(tel, "D5"):
-        d5_run = (
-            [{"id": panel[0]["id"], "error": preflight_error}]
-            if preflight_error
-            else d5.measure(server, panel[:d5_budget], seed)
-        )
+    early_stop = stop_after_d3 is not None and stop_after_d3(d3_run)
+    if early_stop:
+        d5_run = []
+    else:
+        with _span(tel, "D5"):
+            d5_run = (
+                [{"id": panel[0]["id"], "error": preflight_error}]
+                if preflight_error
+                else d5.measure(server, panel[:d5_budget], seed)
+            )
     t2 = time.monotonic()
     return {
         "schema": MEASUREMENT_SCHEMA,
@@ -135,9 +142,10 @@ def measure(
             "d5_panel": str(panel_path),
             "d5_panel_sha256": _sha256(panel_path),
         },
-        "wall_clock_s": {"D3": t1 - t0, "D5": t2 - t1},
+        "wall_clock_s": {"D3": t1 - t0, "D5": 0.0 if early_stop else t2 - t1},
         "d3": d3_run,
         "d5": d5_run,
+        **({"early_stop": True} if early_stop else {}),
     }
 
 
@@ -171,7 +179,11 @@ def detectors(reference: dict, candidate: dict, tel=None) -> dict:
     _check_pair(reference, candidate)
     out = {
         "D3": d3.metrics(reference["d3"], candidate["d3"]),
-        "D5": d5.metrics(reference["d5"], candidate["d5"]),
+        "D5": (
+            {"status": "not run", "reason": "early stop"}
+            if candidate.get("early_stop")
+            else d5.metrics(reference["d5"], candidate["d5"])
+        ),
     }
     with _span(tel, "D6"):  # D6 has no measurement of its own: latency from the D3 run
         out["D6"] = d6.metrics(reference["d3"], candidate["d3"])
@@ -230,7 +242,26 @@ def verdict(reference: dict, candidate: dict, gate_config: dict, env=None, tel=N
         "detectors": dets,
         "compare_wall_clock_s": time.monotonic() - t0,
         "decision": decision,
+        **({"early_stop": True} if candidate.get("early_stop") else {}),
     }
+
+
+def _early_stop_rule(gate_config: dict, reference: dict):
+    thresholds_path = Path(gate_config["thresholds"])
+    if resolve_mode(gate_config["mode"], thresholds_path) != "enforce":
+        return None
+    thresholds = json.loads(thresholds_path.read_text())
+    if not any(rule["detector"] in {"D3", "D6"} for rule in validate(thresholds)):
+        return None
+
+    def stop(rows):
+        partial = {
+            "D3": d3.metrics(reference["d3"], rows),
+            "D6": d6.metrics(reference["d3"], rows),
+        }
+        return score(partial, thresholds)["gate_score"] > 1
+
+    return stop
 
 
 # ---------- CLI ----------
@@ -310,8 +341,9 @@ def _main(args, tel, span, run_id: str) -> int:
                 n3, n5 = lv["d3"], lv["d5"]
             else:
                 n3, n5 = args.budget, args.budget
-            if args.cmd == "run" and args.level:
+            if args.cmd == "run":
                 reference = json.loads(reference_path(args, gate_config).read_text())
+            if args.cmd == "run" and args.level:
                 have_d3, have_d5 = len(reference["d3"]), len(reference["d5"])
                 if have_d3 < n3 or have_d5 < n5:
                     raise ValueError(
@@ -328,6 +360,9 @@ def _main(args, tel, span, run_id: str) -> int:
                 args.config,
                 tel,
                 d5_budget=n5,
+                stop_after_d3=_early_stop_rule(gate_config, reference)
+                if args.cmd == "run"
+                else None,
             )
             if m["server"]["model_path"]:
                 span.set_attribute("gen_ai.request.model", Path(m["server"]["model_path"]).name)

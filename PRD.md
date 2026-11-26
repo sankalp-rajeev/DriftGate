@@ -253,13 +253,22 @@ Prometheus, Grafana and OpenTelemetry run on the laptop (instructor approved, 18
 | Overnight study runner (19 Nov) | `make study STOP_AT=07:00` runs the whole study: resumable (skips runs whose results exist), time-boxed (finishes the current run, stops at STOP_AT), and refuses to start unless the pre-registration is merged into main and `faults/faults.yaml` matches the hash it cites. Results and logs in `runs/<date>-study/` |
 | Approved dependencies | jinja2 (D1 template diff); ggufdoctor as a dev dependency; Jaeger all-in-one image |
 
+Session 3 owner decision: `gate run` measures D3 first and derives D6 from its per-request
+timings. In enforce mode (including auto resolving to enforce), a D3 or D6 rule score above 1
+already decides failure, so the run skips D5, writes `early_stop: true` and D5
+`{"status": "not run", "reason": "early stop"}`, publishes the available metrics and exits 1.
+This only skips work after the verdict is decided; the any-rule-above-1 rule, thresholds,
+budgets and alpha are unchanged. Passing D3/D6 results proceed to D5, and report mode always
+measures everything. ValidateService now has a 1,800-second ceiling for slow passing candidates;
+the 600-second wall-clock target remains.
+
 ---
 
 ## 7. Non-functional requirements
 
 | ID | Requirement | Target |
 | --- | --- | --- |
-| NFR-01 | Gate wall-clock per deploy on t3.large | 10 min or less (kill at 15) |
+| NFR-01 | Gate wall-clock per deploy on t3.large | 10 min or less; ValidateService ceiling 30 min (session 3 decision, Section 6.8) |
 | NFR-02 | A/A false-alarm rate per detector used in the gate | 5% or less |
 | NFR-03 | Lab spend | $25 or less, from Cost Explorer snapshot taken before teardown plus Lab spend panel |
 | NFR-04 | Network exposure | Only the ALB is internet-facing; no SSH, no key pairs; access via Session Manager; IMDSv2 required |

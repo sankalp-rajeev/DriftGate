@@ -88,6 +88,8 @@ def score(dets: dict, thresholds: dict) -> dict:
     for r in validate(thresholds):
         if r["detector"] not in dets:
             continue
+        if dets[r["detector"]].get("status") == "not run":
+            continue
         if dets[r["detector"]].get("status") == "error":
             results.append(
                 r

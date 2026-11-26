@@ -12,7 +12,23 @@ export CD_STACK_NAME="${CD_STACK_NAME:-driftgate-cd}"
 
 aws sts get-caller-identity --region "$AWS_REGION"
 git fetch origin main
-git push codecommit refs/remotes/origin/main:refs/heads/main
+remote_main="$(git ls-remote codecommit refs/heads/main)"
+synced=0
+if [[ -z "$remote_main" ]]; then
+  git push codecommit refs/remotes/origin/main:refs/heads/main
+  synced=1
+else
+  git fetch codecommit main
+  if [[ "$(git rev-parse 'origin/main^{tree}')" != "$(git rev-parse 'FETCH_HEAD^{tree}')" ]]; then
+    bash "$(dirname "$0")/demo_push.sh" RESET
+    synced=1
+  else
+    echo "CodeCommit main already matches origin/main's tree."
+  fi
+fi
+if [[ "$synced" = 1 ]]; then
+  echo "The pipeline run triggered by this sync is expected; its approval email can be rejected."
+fi
 "${MAKE:-make}" up
 "${MAKE:-make}" cd-up
 "${MAKE:-make}" orch-up

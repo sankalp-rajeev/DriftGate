@@ -134,7 +134,10 @@ def test_package_writes_codedeploy_bundle_with_appspec_at_root(tmp_path):
     bundle = tmp_path / "bundles" / f"{HEAD}.zip"  # same key as s3://<bucket>/bundles/<commit>.zip
     with zipfile.ZipFile(bundle) as z:
         names = z.namelist()
-        assert z.read("appspec.yml") == Path("deploy/appspec.yml").read_bytes()
+        # Bundles use the requested commit even when the working AppSpec has pending edits.
+        assert z.read("appspec.yml") == subprocess.check_output(
+            ["git", "show", f"{HEAD}:deploy/appspec.yml"]
+        )
     assert "deploy/hooks/validate_service.sh" in names
     assert "gate/cli.py" in names
     build = json.loads((tmp_path / "build.json").read_text())

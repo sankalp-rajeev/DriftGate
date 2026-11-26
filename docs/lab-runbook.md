@@ -75,7 +75,7 @@ SSM writes the command logs to the storage bucket under its encryption policy.
    and run `make session-up APPROVAL_EMAIL=you@example.org`. Persistent storage and
    the session-2 reference must already exist. The `codecommit` Git remote must point
    to the Lab repository with working credentials. The command checks STS, fetches
-   and pushes `origin/main` to CodeCommit, runs `make up`, `make cd-up`, `make orch-up`
+   and syncs the `origin/main` tree to CodeCommit, runs `make up`, `make cd-up`, `make orch-up`
    in order, then waits up to 30 minutes for the build host's bootstrap marker via
    SSM. It prints the new ALB URL. If it times out, review
    `/var/log/driftgate-bootstrap.log` through SSM; stacks remain up for inspection.
@@ -83,7 +83,8 @@ SSM writes the command logs to the storage bucket under its encryption policy.
 2. Confirm the SNS subscription email. `make pipeline-status` prints the newest
    run's id, commit, stage statuses and timestamps, approval state, deployment id
    and S3 build log URI. Wait for any startup push run to finish before the first
-   demo; approve it if needed. Each run's approval email is separate from the SNS
+   demo; its approval email can be rejected. The sync-triggered pipeline run is expected.
+   Each run's approval email is separate from the SNS
    subscription confirmation.
 3. Run `make demo-push F=CLEAN`. Follow `make pipeline-status`, approve the run's
    SNS link when Build passes, and wait for a successful deployment. Verify
@@ -123,12 +124,14 @@ for the base tree and use the current `codecommit/main` as the new commit's pare
 then push normally. CLEAN appends a UTC timestamped line to `docs/demo-log.md`;
 fault pushes overlay only the injector's `serving/` files from that clean tree.
 Faults supported by `python -m faults.inject` work here (F8 is study-runner-only).
-Every command prints its new commit id and leaves the local branch, index and
+Every demo command prints its new commit id and leaves the local branch, index and
 working files intact. A concurrent CodeCommit push is rejected; rerun after
 inspecting it. No command force-pushes. After demos, CodeCommit has its own
-history, even after `demo-reset`; a later `session-up` seed push may be rejected
-as non-fast-forward. Keep that history and use `demo-reset` to restore the
-GitHub tree; do not force-push to seed it again.
+history, even after `demo-reset`. `session-up` preserves that history: if its tree
+differs from `origin/main`, it uses demo-reset's fast-forward commit logic to restore
+the GitHub tree. If the trees match, it leaves the branch alone; an empty branch is
+seeded normally. A sync-triggered pipeline run is expected and its approval email
+can be rejected. No force-push is needed.
 
 ## End the session
 
