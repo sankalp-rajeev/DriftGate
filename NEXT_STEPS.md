@@ -132,8 +132,8 @@ Make sure the resume and README say these plainly. Each one already matches line
 
 | Section | Status |
 |---|---|
-| Rule zero | To do |
-| 1. D7 detector | To do |
+| Rule zero | Steps 1–2 and 6 complete. GitHub tag `ece528-final` points to `c458611`. Work is on `feat/post-demo`. The 26 Nov probes are recorded in `docs/lab-constraints.md`. |
+| 1. D7 detector | Implemented and pre-registered in `0f51b1f`. Lint passed and 536 tests passed. Ubuntu matrix launched as `2026-11-26-d7-matrix`. Lab A/A awaits a fresh session. The calibrated threshold, Lab reference upload, ValidateService timing, end-to-end deployment, and matrix results are pending. |
 | 2. Auth: probe | Done (26 Nov) |
 | 2. Auth: build | To do |
 | 3. Wording | To do |

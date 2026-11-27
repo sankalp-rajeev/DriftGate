@@ -110,3 +110,10 @@ history. The corrected F8 entries cite the implementation commit for the repair.
 The Q8_0, Q4_K_M, Q2_K and original F3 points reuse `aa/run-00`, `faults/F1/run-00`,
 `faults/F2/run-00` and `faults/F3/run-00` respectively. The other quantizations use the
 matching `sweep/<quantization>/run-00` files.
+
+## Post-demo D7 matrix
+
+The [D7 pre-registration](prereg/2026-11-26-d7.md) covers the Ubuntu rerun
+`2026-11-26-d7-matrix`. The run writes `runs/2026-11-26-d7-matrix/matrix.csv`.
+D7 detection counts, including the F8 result, are pending. The L1 table above
+records the 20 November study.
