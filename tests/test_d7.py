@@ -143,31 +143,48 @@ def test_gate_reuses_the_text_from_each_d3_request(tmp_path, monkeypatch):
     assert verdict["decision"]["scores"]["D7"] == 0.0
 
 
-def test_lab_calibration_uses_the_max_of_the_first_twenty_only():
-    from analysis.d7_runs import lab_calibration
+def test_offline_fit_and_fault_scoring_start_no_processes(tmp_path, monkeypatch):
+    import json
+    import subprocess
+
+    from analysis import d7_runs
+
+    def reject_process(*args, **kwargs):
+        pytest.fail(f"offline scorer attempted to start a process: {args}")
 
     def measurement(vector):
         return {
-            "d3": [{"id": "p"}],
-            "d7": {
-                "model_sha256": "model",
-                "rows": [{"id": "p", "embedding": vector}],
-                "seconds": 0.25,
-            },
+            "source": "archive",
+            "sha256": "example",
+            "embeddings": [{"id": str(i), "embedding": vector} for i in range(64)],
         }
 
-    reference = measurement([1, 0])
-    calibration = [reference] * 19 + [measurement([4, 3])]
-    held_out = [reference] * 9 + [measurement([0, 1])]
-    profile = {
-        "schema": "driftgate.thresholds/2",
-        "rules": [{"detector": "D5", "metric": "accuracy_drop", "kind": "upper", "value": 0.0}],
-        "D7": {"metric": "semantic_drift", "kind": "upper", "weight": 1.0, "value": None},
+    ref = measurement([1, 0])
+    aa = {
+        "embedding_model_sha256": "model",
+        "runs": {
+            "reference": ref,
+            **{f"aa/run-{i:02d}": ref for i in range(30)},
+            "aa/run-19": measurement([4, 3]),
+            "aa/run-29": measurement([0, 1]),
+        },
     }
+    faults = {"embedding_model_sha256": "model", "runs": {"F8/run-00": ref}}
+    (tmp_path / "aa-inputs.json").write_text(json.dumps(aa))
+    monkeypatch.setattr(subprocess, "Popen", reject_process)
+    monkeypatch.setattr(d7_runs, "ARCHIVE", tmp_path)
+    monkeypatch.setattr(d7_runs, "OUT", tmp_path)
+    monkeypatch.setattr(d7_runs, "load_inputs", {"aa": aa, "faults": faults}.__getitem__)
+    monkeypatch.setattr(
+        d7_runs,
+        "require_preregistration",
+        lambda: json.loads((tmp_path / "d7-calibration.json").read_text()),
+    )
+    d7_runs.main(["fit"])
+    d7_runs.main(["score"])
 
-    report, installed = lab_calibration(reference, calibration + held_out, profile)
-
-    assert report["D7"]["k"] == 1 and report["D7"]["n"] == 10
-    assert report["embedding_seconds_max"] == 0.25
-    assert installed["D7"]["value"] == pytest.approx(0.2)
-    assert installed["rules"] == profile["rules"]
+    calibration = json.loads((tmp_path / "d7-calibration.json").read_text())
+    scores = json.loads((tmp_path / "d7-faults.json").read_text())
+    assert calibration["levels"]["L1"]["threshold"] == pytest.approx(0.2)
+    assert calibration["levels"]["L1"]["held_out"]["k"] == 1
+    assert scores["F8/run-00"]["levels"]["L1"]["detected"] is False

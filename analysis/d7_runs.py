@@ -1,231 +1,185 @@
-"""Run the D7 A/A calibration on t3.large or the D7 fault matrix on Ubuntu."""
+"""Fit or score D7 offline from archived D3 measurements and prepared embeddings."""
 
 from __future__ import annotations
 
 import argparse
+import csv
 import json
-import shutil
-import statistics
-import subprocess
-from datetime import datetime, timedelta
 from pathlib import Path
 
-import yaml
-
-from analysis import calibrate, study
-from faults import aa, inject
-from gate import cli, d7, serve
-from gate import reference as ref_store
-from gate.llama_client import LlamaServer, detector_error
-from gate.manifest import load_yaml
-from gate.score import validate
-
-PREREG = Path("docs/prereg/2026-11-26-d7.md")
-
-
-def write(path: Path, value: dict) -> None:
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(value, indent=2) + "\n")
-    tmp.replace(path)
+from analysis import calibrate, matrix
+from analysis.d7_inputs import (
+    ARCHIVE,
+    DOWNGRADE,
+    FAULTS,
+    OUT,
+    STUDY,
+    archive_paths,
+    require_preregistration,
+    write_json,
+)
+from gate import d7
+from gate.manifest import sha256_file
 
 
-def build_reference(path: Path, source: Path, config: dict, bundle: Path, level: str) -> dict:
-    """Replay the baseline's D3 answers and add embeddings to the archived measurement."""
-    base = json.loads(source.read_text())
-    if base["seed"] != 0 or any("error" in row for row in base["d3"]):
-        raise ValueError("D7 needs a successful, seed-0 D3 reference")
-    n3, n5 = calibrate.LEVELS[level]
-    process, url = aa.start_server(bundle, Path("models"))
-    try:
-        measured = cli.measure(
-            LlamaServer(url), n3, 0,
-            Path(config["data"]["d3_prompts"]), Path(config["data"]["d5_panel"]),
-            d5_budget=n5, d3_only=True, embedding_config=config["d7"],
-        )  # fmt: skip
-    finally:
-        aa.stop_server(process)
-    if error := detector_error(measured["d7"]["rows"]):
-        raise ValueError(f"D7 reference failed: {error}")
-    if measured["inputs"]["d3_prompts_sha256"] != base["inputs"]["d3_prompts_sha256"] or [
-        (r["id"], r["tokens"]) for r in measured["d3"]
-    ] != [(r["id"], r["tokens"]) for r in base["d3"][:n3]]:
-        raise ValueError("baseline replay differs from the archived D3 reference")
-    base["d7"] = measured["d7"]
-    write(path, base)
-    return base
+def load_inputs(stage: str) -> dict:
+    inputs = json.loads((OUT / f"{stage}-inputs.json").read_text())
+    paths = archive_paths(stage)
+    if set(inputs["runs"]) != set(paths):
+        raise ValueError(f"unexpected {stage} input coverage")
+    for name, path in paths.items():
+        cached = inputs["runs"][name]
+        measurement = json.loads(path.read_text())
+        if (
+            cached["source"] != str(path)
+            or cached["sha256"] != sha256_file(path)
+            or [row["id"] for row in measurement["d3"]] != [row["id"] for row in cached["rows"]]
+        ):
+            raise ValueError(f"prepared embeddings do not match archived measurement {path}")
+    return inputs
 
 
-def lab_calibration(reference: dict, runs: list[dict], thresholds: dict):
-    n_cal, n_held = calibrate.N_CALIBRATION, calibrate.N_HELD_OUT
-    if len(runs) != n_cal + n_held:
-        raise ValueError(f"expected {n_cal + n_held} Lab A/A runs, found {len(runs)}")
-    measurements = [cli.semantic_metrics(reference, run) for run in runs]
-    calibration, held = measurements[:n_cal], measurements[n_cal:]
-    if any(result.get("status") == "error" for result in calibration):
-        raise ValueError("cannot calibrate D7 from detector errors")
-    metric = d7.METRIC
-    value = calibrate.threshold_value("upper", [result[metric] for result in calibration])
-    k = sum(result.get("status") == "error" or result[metric] > value for result in held)
-    timing = [row["embedding_seconds"] for row in measurements]
-    eligible = k <= calibrate.MAX_FALSE_ALARMS
-    report = {
-        "level": "L1",
-        "n_calibration": n_cal,
-        "D7": {
-            "k": k,
-            "n": n_held,
-            "rate": k / n_held,
-            "ci95": calibrate.clopper_pearson(k, n_held),
-        },
-        "per_detector_bound": 1 / (n_cal + 1),
-        "eligible": eligible,
-        "embedding_seconds_mean": statistics.mean(timing),
-        "embedding_seconds_max": max(timing),
-    }
-    if eligible:
-        thresholds = thresholds | {"D7": thresholds["D7"] | {"value": value}}
-        validate(thresholds)
-    return report, thresholds
+def score_run(reference: dict, run: dict, level: str) -> dict:
+    n = calibrate.LEVELS[level][0]
+    rows = run["embeddings"][:n]
+    if len(rows) != n and not any("error" in row for row in rows):
+        raise ValueError(f"{run['source']} lacks coverage for {level}")
+    result = d7.metrics(reference["embeddings"], rows)
+    result.pop("per_prompt", None)
+    return result
 
 
-def run_lab(out: Path, source: Path, config: dict, s3_uri: str | None) -> None:
-    level = "L1"
-    if ref_store.instance_type() != "t3.large":
-        raise ValueError("Lab D7 A/A requires a t3.large")
-    serving = load_yaml(inject.REFERENCE_CONFIG)
-    serving["server"]["port"] = config["d7"]["aa_generation_port"]
-    serving_path = out / "serving.yaml"
-    serving_path.write_text(yaml.safe_dump(serving, sort_keys=False))
-    bundle = inject.build("AA", out / "bundles", base_config=serving_path)
-    path = out / "reference.json"
-    base = build_reference(path, source, config, bundle, level)
-    aa.main(
-        [
-            "--runs",
-            str(calibrate.N_CALIBRATION + calibrate.N_HELD_OUT),
-            "--level",
-            level,
-            "--seed",
-            "0",
-            "--d3-only",
-            "--bundle",
-            str(bundle),
-            "--reference",
-            str(path),
-            "--out",
-            str(out / "aa"),
-        ]  # fmt: skip
-    )
-    report, thresholds = lab_calibration(
-        base,
-        calibrate.load_runs(out / "aa"),
-        json.loads(Path(config["thresholds"]).read_text()),
-    )
-    write(out / "calibration.json", report)
-    if report["eligible"]:
-        write(out / "thresholds.json", thresholds)
-    key = base["reference"]["key"]
-    embeddings = out / d7.REFERENCE_FILE
-    write(embeddings, d7.reference_document(base, key))
-    if s3_uri:
-        ref_store.upload(embeddings, f"{s3_uri.rstrip('/')}/{key}{d7.REFERENCE_FILE}")
-
-
-class MatrixStudy(study.Study):
-    def __init__(self, out: Path, reference: Path, previous: Path):
-        super().__init__(out, reference=reference, include_rq2=False)
-        self.previous = previous
-
-    def bundle(self, fault: str) -> Path:
-        path = self.out / "bundles" / fault
-        if not (path / "bundle.json").exists():
-            inject.build(fault, path.parent)
-        return path
-
-    def f8_unit(self, cutoff=None) -> study.Unit:
-        """Replay the originally reported F8 engine rather than selecting a later release."""
-        marker = self.out / "f8.json"
-
-        def prepare():
-            original = json.loads((self.previous / "f8.json").read_text())
-            if not serve.engine_matches(original, serve.binary_commit(Path(original["bin_dir"]))):
-                raise ValueError("original F8 llama-server binary is unavailable")
-            bundle = self.out / "bundles/F8"
-            old = self.previous / "bundles/F8"
-            shutil.copytree(
-                old, bundle, dirs_exist_ok=True, ignore=shutil.ignore_patterns("server.log")
-            )
-            write(marker, original)
-            self.f8_info()
-
-        return study.Unit("f8-reuse", marker.exists, prepare)
-
-    def determinism_unit(self) -> study.Unit:
-        base = super().determinism_unit()
-
-        def run():
-            base.run()
-            base_path = self.out / "determinism.json"
-            runs = calibrate.load_runs(self.out / "aa")
-            calibrate.calibrate(json.loads(self.reference.read_text()), runs)
-            doc = json.loads(base_path.read_text())
-            write(base_path, doc | {"d7_calibration_checked": True})
-
-        def done():
-            path = self.out / "determinism.json"
-            return path.exists() and json.loads(path.read_text()).get("d7_calibration_checked")
-
-        return study.Unit(base.name, done, run)
-
-    def repetition_count(self) -> int:
-        path = self.out / "determinism.json"
-        if not json.loads(path.read_text()).get("d7_calibration_checked"):
-            raise ValueError("D7 calibration must pass before fault trials")
-        return super().repetition_count()
-
-
-def run_matrix(out: Path, source: Path, config: dict, previous: Path) -> None:
-    # The new pre-registration lives on this branch, alongside the original frozen protocol.
-    committed = subprocess.check_output(["git", "show", f"HEAD:{PREREG}"])
-    if (
-        committed != PREREG.read_bytes()
-        or study.sha256(study.FAULTS_FILE) not in committed.decode()
-    ):
-        raise ValueError(
-            "commit the D7 pre-registration with the current fault hash before running"
+def fit_thresholds(inputs: dict) -> dict:
+    runs = inputs["runs"]
+    reference = runs["reference"]
+    n_fit, n_held = calibrate.N_CALIBRATION, calibrate.N_HELD_OUT
+    fit_ids = [f"aa/run-{i:02d}" for i in range(n_fit)]
+    held_ids = [f"aa/run-{i:02d}" for i in range(n_fit, n_fit + n_held)]
+    levels = {}
+    for level in calibrate.LEVELS:
+        fit = {name: score_run(reference, runs[name], level) for name in fit_ids}
+        held = {name: score_run(reference, runs[name], level) for name in held_ids}
+        if any("error" in result for result in fit.values()):
+            raise ValueError(f"cannot fit D7 threshold from {level} detector errors")
+        value = calibrate.threshold_value("upper", [result[d7.METRIC] for result in fit.values()])
+        k = sum(
+            "error" in r or calibrate.exceeds("upper", r[d7.METRIC], value) for r in held.values()
         )
-    ref_path = out / "reference.json"
-    revision = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-    write(out / "revision.json", {"commit": revision})
-    runner = MatrixStudy(out, ref_path, previous)
-    if not ref_path.exists():
-        build_reference(ref_path, source, config, runner.bundle("AA"), "L3")
-    result = study.execute(runner, datetime.now() + timedelta(days=7))
-    if result != "complete":
-        raise SystemExit(f"fault study {result}; see {out}/study.log")
+        levels[level] = {
+            "d3_prompts": calibrate.LEVELS[level][0],
+            "threshold": value,
+            "held_out": {
+                "k": k,
+                "n": n_held,
+                "rate": k / n_held,
+                "ci95": calibrate.clopper_pearson(k, n_held),
+            },  # fmt: skip
+            "fit_statistics": fit,
+            "held_out_statistics": held,
+        }
+    return {
+        "embedding_model_sha256": inputs["embedding_model_sha256"],
+        "reference_sha256": reference["sha256"],
+        "fit_runs": fit_ids,
+        "held_out_runs": held_ids,
+        "per_detector_bound": 1 / (n_fit + 1),
+        "levels": levels,
+    }
+
+
+def score_faults(reference: dict, inputs: dict, fit: dict) -> dict:
+    output = {}
+    for name, run in inputs["runs"].items():
+        levels = {}
+        for level, info in fit["levels"].items():
+            result = score_run(reference, run, level)
+            detected = "error" in result or calibrate.exceeds(
+                "upper", result[d7.METRIC], info["threshold"]
+            )
+            levels[level] = result | {"detected": detected}
+        output[name] = {"source": run["source"], "sha256": run["sha256"], "levels": levels}
+    return output
+
+
+def extend_matrix(source: Path, target: Path, results: dict) -> None:
+    """Retain legacy detector rows and add the D7 results at each fault and budget."""
+    with source.open(newline="") as f:
+        rows = list(csv.DictReader(f))
+    rows = [row for row in rows if row["detector"] != "D7"]
+    outputs = []
+    for row in rows:
+        fault, level = row["fault"], row["level"]
+        if fault not in FAULTS:
+            raise ValueError(f"unexpected fault {fault} in the published matrix")
+        flags = [results[f"{fault}/run-{i:02d}"]["levels"][level]["detected"] for i in range(2)]
+        tally = f"{sum(flags)}/{len(flags)}"
+        if row["detector"] == "gate":
+            if any(flags):
+                legacy = calibrate.load_runs(STUDY / "faults" / fault)
+                reference = json.loads(archive_paths("aa")["reference"].read_text())
+                rules = json.loads(
+                    (STUDY / "calibration" / f"thresholds-{level}.json").read_text()
+                )["rules"]
+                hits = [
+                    any(calibrate.fired(
+                        calibrate.statistics(reference, run, level), rules, run.get("d1_ok")
+                    ).values())
+                    for run in legacy
+                ]  # fmt: skip
+                count = sum(old or new for old, new in zip(hits, flags, strict=True))
+                lo, hi = calibrate.clopper_pearson(count, len(flags))
+                row |= {"detections": count, "rate": count / len(flags),
+                        "ci95_low": lo, "ci95_high": hi}  # fmt: skip
+            k, n = sum(flags), len(flags)
+            lo, hi = calibrate.clopper_pearson(k, n)
+            outputs.append(
+                row
+                | {
+                    "detector": "D7",
+                    "runs": n,
+                    "detections": k,
+                    "rate": k / n,
+                    "ci95_low": lo,
+                    "ci95_high": hi,
+                    "D7": tally,
+                }  # fmt: skip
+            )
+        outputs.append(row | {"D7": tally})
+    tmp = target.with_suffix(".tmp")
+    with tmp.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=[*matrix.COLUMNS, "D7"])
+        writer.writeheader()
+        writer.writerows(outputs)
+    tmp.replace(target)
 
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    sub = parser.add_subparsers(dest="run", required=True)
-    for name in ("lab-aa", "matrix"):
-        command = sub.add_parser(name)
-        command.add_argument("--out", type=Path, required=True)
-        command.add_argument("--reference", type=Path, required=True)
-        if name == "lab-aa":
-            command.add_argument("--s3-uri")
-            command.add_argument("--revision", required=True)
-        else:
-            command.add_argument("--previous", type=Path, required=True)
-    args = parser.parse_args(argv)
-    args.out.mkdir(parents=True, exist_ok=True)
-    config = load_yaml(cli.DEFAULT_GATE_CONFIG)
-    d7.install_model(config["d7"])
-    if args.run == "lab-aa":
-        write(args.out / "revision.json", {"commit": args.revision})
-        run_lab(args.out, args.reference, config, args.s3_uri)
+    parser.add_argument("stage", choices=("fit", "score", "matrix"))
+    stage = parser.parse_args(argv).stage
+    if stage == "fit":
+        result = fit_thresholds(load_inputs("aa"))
+        result["aa_inputs_sha256"] = sha256_file(OUT / "aa-inputs.json")
+        write_json(ARCHIVE / "d7-calibration.json", result)
+    elif stage == "score":
+        fit = require_preregistration()
+        aa = load_inputs("aa")
+        faults = load_inputs("faults")
+        if (
+            sha256_file(OUT / "aa-inputs.json") != fit["aa_inputs_sha256"]
+            or faults["embedding_model_sha256"] != aa["embedding_model_sha256"]
+        ):
+            raise ValueError("D7 embeddings differ from the calibrated inputs")
+        scores = score_faults(aa["runs"]["reference"], faults, fit)
+        write_json(ARCHIVE / "d7-faults.json", scores)
     else:
-        run_matrix(args.out, args.reference, config, args.previous)
+        require_preregistration()
+        scores = json.loads((ARCHIVE / "d7-faults.json").read_text())
+        if not all(f"{DOWNGRADE}/run-{i:02d}" in scores for i in range(2)):
+            raise ValueError("the F8 downgrade scores are missing")
+        target = ARCHIVE / "matrix.csv"
+        extend_matrix(target, target, scores)
+        extend_matrix(STUDY / "matrix.csv", STUDY / "matrix.csv", scores)
 
 
 if __name__ == "__main__":

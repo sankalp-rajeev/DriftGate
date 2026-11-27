@@ -1,0 +1,163 @@
+{
+  "embedding_model_sha256": "f0b2fef971e8366438bfd2d9aefea1b0115919389448806d290237f638bae999",
+  "inputs_sha256": "271229baf76f4bf92047414765bcf9253985fa06a4ba930b3b5a4ec80edd28e0",
+  "unique_token_sequences": 254,
+  "unique_nonblank_texts": 254,
+  "runs": {
+    "reference": {
+      "source": "artifacts/reference/d7efb072e7724d25048a4fda0a3e10b04bdef5d06b1403a1c93bd9f1240a63c8/5c1277b1db8a99d27b529ae10370372e4da22ad6134478f18dcd8aae19d75d49/local-Sankalps-Razer/measurement.json",
+      "sha256": "20f0a6fe2f3e2557195474e3494bf384e50194cd2adeefbb9ae92b6bd63b19e6",
+      "items": 256
+    },
+    "aa/run-00": {
+      "source": "runs/2026-11-19-study/aa/run-00.measurement.json",
+      "sha256": "9a74c0fbded912d79ff7c2b9c534958992ebaa3b4b2e1d641524947258be996e",
+      "items": 64
+    },
+    "aa/run-01": {
+      "source": "runs/2026-11-19-study/aa/run-01.measurement.json",
+      "sha256": "6b9e02041f3f4c59722448268f15aea918f1a1cab7e5579aaac69a57375e4170",
+      "items": 64
+    },
+    "aa/run-02": {
+      "source": "runs/2026-11-19-study/aa/run-02.measurement.json",
+      "sha256": "87f61c0dc606bf4d6dbda8bf11f2f8108f6f5eb401b8e83249250ba31b2341ec",
+      "items": 64
+    },
+    "aa/run-03": {
+      "source": "runs/2026-11-19-study/aa/run-03.measurement.json",
+      "sha256": "a1f82351483cd85fe0f2c1ee116a7c93d3070c67186b355b9912497cecede675",
+      "items": 64
+    },
+    "aa/run-04": {
+      "source": "runs/2026-11-19-study/aa/run-04.measurement.json",
+      "sha256": "5bb21ba7f8dcb3209d9e1a69b3457506bc88c5142098e2408b8a6bde5e68f674",
+      "items": 64
+    },
+    "aa/run-05": {
+      "source": "runs/2026-11-19-study/aa/run-05.measurement.json",
+      "sha256": "29f58f46e72365e0ae48027b696f0766208bcddb9883ff2ccb9fb59e65219152",
+      "items": 64
+    },
+    "aa/run-06": {
+      "source": "runs/2026-11-19-study/aa/run-06.measurement.json",
+      "sha256": "57edc324e9f6898df5d03dc367743f8df2958391766abaa72549f7027bd2ad09",
+      "items": 64
+    },
+    "aa/run-07": {
+      "source": "runs/2026-11-19-study/aa/run-07.measurement.json",
+      "sha256": "3ebf5437f023bcdf5028413492cba134aa24fbfedc206e96d9eba32d332d274c",
+      "items": 64
+    },
+    "aa/run-08": {
+      "source": "runs/2026-11-19-study/aa/run-08.measurement.json",
+      "sha256": "12deeb41fe784c51534025d1461c379e9aa7aa015807d44281c03835790f9104",
+      "items": 64
+    },
+    "aa/run-09": {
+      "source": "runs/2026-11-19-study/aa/run-09.measurement.json",
+      "sha256": "f7245230a1cb02127c39cd0d6a6968493f45434a8372687c3f583bc0a364663c",
+      "items": 64
+    },
+    "aa/run-10": {
+      "source": "runs/2026-11-19-study/aa/run-10.measurement.json",
+      "sha256": "1666f9ed39d8ab72c4f389d0c1f848108fa1843f9895efab3b16416503303a6e",
+      "items": 64
+    },
+    "aa/run-11": {
+      "source": "runs/2026-11-19-study/aa/run-11.measurement.json",
+      "sha256": "894718a31ebf70585cbef37ed538f314f7c288aee09706e78f7848406769228e",
+      "items": 64
+    },
+    "aa/run-12": {
+      "source": "runs/2026-11-19-study/aa/run-12.measurement.json",
+      "sha256": "5ecf7ba0d846819950695db519ae098de8b94d53908441855877ad3ae2bc5f9b",
+      "items": 64
+    },
+    "aa/run-13": {
+      "source": "runs/2026-11-19-study/aa/run-13.measurement.json",
+      "sha256": "6742d404a33b9244ba7285e2f41ab03727ca6350be5463dbab9cec5a7e89a72c",
+      "items": 64
+    },
+    "aa/run-14": {
+      "source": "runs/2026-11-19-study/aa/run-14.measurement.json",
+      "sha256": "b49b44c3a537cb1df14227f9d6b7a83c49a27f943fa33e60538247e3823c9ad0",
+      "items": 64
+    },
+    "aa/run-15": {
+      "source": "runs/2026-11-19-study/aa/run-15.measurement.json",
+      "sha256": "1907f918a79da8e0426d9a263676f32525bb2aeb88242caece19f63eb0104c69",
+      "items": 64
+    },
+    "aa/run-16": {
+      "source": "runs/2026-11-19-study/aa/run-16.measurement.json",
+      "sha256": "acea1f61bd474fc261a6f68f87d5784ae48d754c733d853903feaa2638fd7214",
+      "items": 64
+    },
+    "aa/run-17": {
+      "source": "runs/2026-11-19-study/aa/run-17.measurement.json",
+      "sha256": "1991c708b3d507888bb21ede4b888fdfe60ef9d482b67609d3ae7fdc5812b03a",
+      "items": 64
+    },
+    "aa/run-18": {
+      "source": "runs/2026-11-19-study/aa/run-18.measurement.json",
+      "sha256": "58529f3644b1a6c624b2aa919dc5a4f7637ba5ea753f827c7c70e4a90545fafe",
+      "items": 64
+    },
+    "aa/run-19": {
+      "source": "runs/2026-11-19-study/aa/run-19.measurement.json",
+      "sha256": "93ca8cf94bc18b66469e0d5738099c0eccd495566b3687e776b057970efdc390",
+      "items": 64
+    },
+    "aa/run-20": {
+      "source": "runs/2026-11-19-study/aa/run-20.measurement.json",
+      "sha256": "7ecaf7df04b5bfccb6517e66d7fbcd4658a4f9d984464daf9ad585fdaa134fbd",
+      "items": 64
+    },
+    "aa/run-21": {
+      "source": "runs/2026-11-19-study/aa/run-21.measurement.json",
+      "sha256": "e0b68e9a457c327894684e00950c61d81cfe54f06d4d56e37803161c7d588ecb",
+      "items": 64
+    },
+    "aa/run-22": {
+      "source": "runs/2026-11-19-study/aa/run-22.measurement.json",
+      "sha256": "23fc067f1acf863f990aa324fbf1300f3609ee1f1fd96b0cd38b6641c23f7585",
+      "items": 64
+    },
+    "aa/run-23": {
+      "source": "runs/2026-11-19-study/aa/run-23.measurement.json",
+      "sha256": "bfc2f75071c3e81a25f616c7f89c379e51d02e3acd3737d3800ccef24a33386f",
+      "items": 64
+    },
+    "aa/run-24": {
+      "source": "runs/2026-11-19-study/aa/run-24.measurement.json",
+      "sha256": "5ad057501aedd234a21d76941a09640c16323efe30c7eec6ef36748fc97e1217",
+      "items": 64
+    },
+    "aa/run-25": {
+      "source": "runs/2026-11-19-study/aa/run-25.measurement.json",
+      "sha256": "bfc5aea9af114d31a7ed7f350423fe4eee644644563742b054d29fec293e1d6e",
+      "items": 64
+    },
+    "aa/run-26": {
+      "source": "runs/2026-11-19-study/aa/run-26.measurement.json",
+      "sha256": "89cfa235ea2b8535cd9b39eb0a28e45660c4538444e1b30cfc2974ab9eeac02b",
+      "items": 64
+    },
+    "aa/run-27": {
+      "source": "runs/2026-11-19-study/aa/run-27.measurement.json",
+      "sha256": "791932340f60fbdbdd29f4482e80b4de6cdce851f93f54bf6360acbb12e532d6",
+      "items": 64
+    },
+    "aa/run-28": {
+      "source": "runs/2026-11-19-study/aa/run-28.measurement.json",
+      "sha256": "9913be2f3907864a28c4a5138232336e112922f75fc5c16b77ade79529d570ac",
+      "items": 64
+    },
+    "aa/run-29": {
+      "source": "runs/2026-11-19-study/aa/run-29.measurement.json",
+      "sha256": "4459a34b4d39875e47d7a444efe1b8efe724a3ba0462c2c2fb5344f844f87faf",
+      "items": 64
+    }
+  }
+}

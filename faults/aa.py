@@ -20,7 +20,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from gate import cli, d1, d2, d7, serve
+from gate import cli, d1, d2, serve
 from gate import reference as ref_store
 from gate.llama_client import LlamaServer
 from gate.manifest import load_yaml
@@ -72,10 +72,10 @@ def stop_server(proc) -> None:
 def reference_measurement(args, gate_config: dict) -> dict:
     """--reference, else the baseline's reference measurement in the local store."""
     if args.reference:
-        return d7.load_reference(args.reference)
+        return json.loads(args.reference.read_text())
     key = ref_store.resolve_key(gate_config, {}, args.instance_type)
     path = ref_store.local_dir(gate_config, key) / ref_store.MEASUREMENT_FILE
-    return d7.load_reference(path)
+    return json.loads(path.read_text())
 
 
 def levels(args, gate_config: dict) -> tuple[int, int]:
@@ -93,8 +93,6 @@ def run(args) -> list[Path]:
     panel = Path(gate_config["data"]["d5_panel"])
     bundle_meta = json.loads((args.bundle / "bundle.json").read_text())
     bundle_config = load_yaml(args.bundle / "serving/config.yaml")
-    d3_only = getattr(args, "d3_only", False)
-    embedding_config = gate_config["d7"] if "d7" in reference and not args.d5_only else None
     n3, n5 = levels(args, gate_config)
     args.out.mkdir(parents=True, exist_ok=True)
     written = []
@@ -121,8 +119,6 @@ def run(args) -> list[Path]:
                 config_path=args.bundle / "serving/config.yaml",
                 d5_budget=n5,
                 skip_d3=args.d5_only,
-                embedding_config=embedding_config,
-                d3_only=d3_only,
             )
         finally:
             stop_server(proc)
@@ -154,10 +150,7 @@ def run(args) -> list[Path]:
             result = d1.run(args.bundle / "serving/config.yaml", template, args.out / f"d1-{i:02d}")
             seconds["D1"] = time.monotonic() - t
             (args.out / f"run-{i:02d}.d1.json").write_text(json.dumps(result, indent=2) + "\n")
-        if d3_only:
-            verdict = {"detectors": {"D7": cli.semantic_metrics(reference, m)}}
-        else:
-            verdict = None if args.d5_only else cli.verdict(reference, m, gate_config)
+        verdict = None if args.d5_only else cli.verdict(reference, m, gate_config)
         record = {
             "schema": AA_SCHEMA,
             "run": i,
@@ -197,11 +190,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("--d2", action="store_true", help="also run D2 (A/A, F1, F2, F3, F8, sweep)")
     p.add_argument("--d1", action="store_true", help="also run D1 on the bundle")
-    subset = p.add_mutually_exclusive_group()
-    subset.add_argument(
-        "--d5-only", action="store_true", help="measure D5 only (quantization sweep)"
-    )
-    subset.add_argument("--d3-only", action="store_true", help="measure D3 and D7 only (Lab A/A)")
+    p.add_argument("--d5-only", action="store_true", help="measure D5 only (quantization sweep)")
     p.add_argument("--instance-type", help="default: derived (IMDSv2 or local-host)")
     p.add_argument("--gate-config", type=Path, default=cli.DEFAULT_GATE_CONFIG)
     p.add_argument("--reference", type=Path, help="default: the baseline reference measurement")

@@ -39,6 +39,6 @@ d7:
   models: serving/models.yaml
   llama_cpp_lock: serving/llama_cpp.lock
   port: 8082
-  aa_generation_port: 8083
+  detokenize_port: 8083
   threads: 2
   timeout_s: 10
