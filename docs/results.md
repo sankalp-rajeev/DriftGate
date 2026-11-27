@@ -2,23 +2,24 @@
 
 The laptop study completed on 20 November 2026. L1 was the smallest eligible budget
 (16 D3 prompts and 64 D5 items). Each fault had two fresh redeploys. The results below
-use the saved L1 rows in `runs/2026-11-19-study/matrix.csv`.
+use the saved L1 rows in `runs/2026-11-19-study/matrix.csv`. D7 was scored later
+from the archived continuations.
 The [study archive](../results/2026-11-19-study/README.md) contains the saved matrix,
 calibration outputs and analysis summaries.
 
 ## L1 detections
 
-| Fault | D1 | D2 | D3 | D5 | D6 | Any detector | Mean D3 time (s) |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| F1 · Q4_K_M weights | 0/2 | 2/2 | 2/2 | 2/2 | 0/2 | 2/2 | 11.79 |
-| F2 · Q2_K weights | 0/2 | 2/2 | 2/2 | 2/2 | 0/2 | 2/2 | 9.39 |
-| F3 · Quantized KV cache | 0/2 | 0/2† | 2/2 | 2/2 | 0/2 | 2/2 | 15.54 |
-| F4 · Default system prompt | 2/2 | — | 2/2 | 2/2 | 0/2 | 2/2 | 13.77 |
-| F5 · Tool-call template | 2/2 | — | 0/2 | 0/2 | 0/2 | 2/2 | 14.72 |
-| F6 · Sampler default | 0/2 | — | 0/2 | 0/2 | 0/2 | 0/2 | 14.69 |
-| F7 · Context window | 0/2 | — | 0/2 | 2/2 | 0/2 | 2/2 | 16.12 |
-| F8 · Engine bump to b12557 | 0/2 | 0/2 | 0/2 | 0/2 | 0/2 | 0/2 | 15.85 |
-| F9 · One serving thread | 0/2 | — | 0/2 | 0/2 | 2/2 | 2/2 | 53.98 |
+| Fault | D1 | D2 | D3 | D5 | D6 | D7 | Any detector | Mean D3 time (s) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| F1 · Q4_K_M weights | 0/2 | 2/2 | 2/2 | 2/2 | 0/2 | 2/2 | 2/2 | 11.79 |
+| F2 · Q2_K weights | 0/2 | 2/2 | 2/2 | 2/2 | 0/2 | 2/2 | 2/2 | 9.39 |
+| F3 · Quantized KV cache | 0/2 | 0/2† | 2/2 | 2/2 | 0/2 | 2/2 | 2/2 | 15.54 |
+| F4 · Default system prompt | 2/2 | — | 2/2 | 2/2 | 0/2 | 2/2 | 2/2 | 13.77 |
+| F5 · Tool-call template | 2/2 | — | 0/2 | 0/2 | 0/2 | 0/2 | 2/2 | 14.72 |
+| F6 · Sampler default | 0/2 | — | 0/2 | 0/2 | 0/2 | 0/2 | 0/2 | 14.69 |
+| F7 · Context window | 0/2 | — | 0/2 | 2/2 | 0/2 | 0/2 | 2/2 | 16.12 |
+| F8 · Engine bump to b12557 | 0/2 | 0/2 | 0/2 | 0/2 | 0/2 | 0/2 | 0/2 | 15.85 |
+| F9 · One serving thread | 0/2 | — | 0/2 | 0/2 | 2/2 | 0/2 | 2/2 | 53.98 |
 
 Cells show detections / completed runs. A dash means the detector did not run. D4 was cut.
 † The original D2 run omitted the F3 KV flags, so this cell provides no evidence about
@@ -111,9 +112,22 @@ The Q8_0, Q4_K_M, Q2_K and original F3 points reuse `aa/run-00`, `faults/F1/run-
 `faults/F2/run-00` and `faults/F3/run-00` respectively. The other quantizations use the
 matching `sweep/<quantization>/run-00` files.
 
-## Post-demo D7 matrix
+## Offline D7 results
 
-The [D7 pre-registration](prereg/2026-11-26-d7.md) covers the Ubuntu rerun
-`2026-11-26-d7-matrix`. The run writes `runs/2026-11-26-d7-matrix/matrix.csv`.
-D7 detection counts, including the F8 result, are pending. The L1 table above
-records the 20 November study.
+The [offline pre-registration](prereg/2026-11-26-d7-offline.md) fixes the fitted
+threshold before fault scoring. D7 was calibrated on the original 20 fit runs
+and evaluated on the original 10 held-out runs. The threshold for
+`1 − p5 cosine similarity` was **0.0** at L1, L2 and L3. D7 recorded **0/10**
+held-out false alarms at each budget (exact 95% Clopper–Pearson interval **0–30.85%**).
+
+At each budget, D7 detected **F1, F2, F3 and F4** in **2/2** repetitions each.
+It detected **0/2** for each of F5, F6, F7, F8 and F9. The corrected b12557 F8 pair
+and the v1.0.0 downgrade pair each returned **0/2** at every budget. The main matrix
+uses the corrected pair.
+The combined gate detection counts were unchanged.
+
+The [matrix](../results/2026-11-19-study/matrix.csv),
+[calibration artifact](../results/2026-11-19-study/d7-calibration.json) and
+[per-run fault scores](../results/2026-11-19-study/d7-faults.json) cover all
+three budgets. The F8 repair record's matrix checksum refers to the original
+pre-D7 matrix preserved in the demo tag.

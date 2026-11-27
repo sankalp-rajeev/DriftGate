@@ -147,7 +147,7 @@ def extend_matrix(source: Path, target: Path, results: dict) -> None:
         outputs.append(row | {"D7": tally})
     tmp = target.with_suffix(".tmp")
     with tmp.open("w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=[*matrix.COLUMNS, "D7"])
+        writer = csv.DictWriter(f, fieldnames=[*matrix.COLUMNS, "D7"], lineterminator="\n")
         writer.writeheader()
         writer.writerows(outputs)
     tmp.replace(target)

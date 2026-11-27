@@ -148,6 +148,7 @@ def test_offline_fit_and_fault_scoring_start_no_processes(tmp_path, monkeypatch)
     import subprocess
 
     from analysis import d7_runs
+    from gate.manifest import sha256_file
 
     def reject_process(*args, **kwargs):
         pytest.fail(f"offline scorer attempted to start a process: {args}")
@@ -170,11 +171,25 @@ def test_offline_fit_and_fault_scoring_start_no_processes(tmp_path, monkeypatch)
         },
     }
     faults = {"embedding_model_sha256": "model", "runs": {"F8/run-00": ref}}
-    (tmp_path / "aa-inputs.json").write_text(json.dumps(aa))
+    archive = {}
+    for stage, inputs in (("aa", aa), ("faults", faults)):
+        paths = {}
+        for name, run in inputs["runs"].items():
+            source = tmp_path / f"{stage}-{name.replace('/', '-')}.json"
+            rows = [{"id": row["id"], "tokens": [1]} for row in run["embeddings"]]
+            source.write_text(json.dumps({"d3": rows}))
+            inputs["runs"][name] = run | {
+                "source": str(source),
+                "sha256": sha256_file(source),
+                "rows": rows,
+            }
+            paths[name] = source
+        (tmp_path / f"{stage}-inputs.json").write_text(json.dumps(inputs))
+        archive[stage] = paths
     monkeypatch.setattr(subprocess, "Popen", reject_process)
     monkeypatch.setattr(d7_runs, "ARCHIVE", tmp_path)
     monkeypatch.setattr(d7_runs, "OUT", tmp_path)
-    monkeypatch.setattr(d7_runs, "load_inputs", {"aa": aa, "faults": faults}.__getitem__)
+    monkeypatch.setattr(d7_runs, "archive_paths", archive.__getitem__)
     monkeypatch.setattr(
         d7_runs,
         "require_preregistration",

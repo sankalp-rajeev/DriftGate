@@ -5,7 +5,9 @@ This archive contains the compact outputs of `runs/2026-11-19-study/`. See the
 
 | File | Contents |
 | --- | --- |
-| `matrix.csv` | Detections, exact 95% intervals and mean D3 times by fault, detector and budget. Includes the [corrected F8 runs](../../docs/results/f8-repair.json). |
+| `matrix.csv` | Detections, exact 95% intervals and mean D3 times by fault, detector and budget, including the offline D7 counts and the [corrected F8 runs](../../docs/results/f8-repair.json). |
+| `d7-aa-inputs.json`, `d7-faults-inputs.json` | Archived measurement paths and SHA-256 digests, with checksums for the locally prepared embedding data. |
+| `d7-calibration.json`, `d7-faults.json` | Offline D7 fit and held-out results, and per-run scores for F1–F9 and the supplemental F8 downgrade. |
 | `calibration/calibration.json` | Rules fitted on 20 A/A runs and false-alarm estimates from 10 held-out runs at each budget. |
 | `calibration/thresholds-L{1,2,3}.json` | Saved laptop rules used to score this study. The [24 Nov Lab deviation](../../docs/deviations/2026-11-24-t3large-thresholds.md) installs the L1 behavioral thresholds and D6 rounded to 1.37 for the Lab; these originals are unchanged. |
 | `determinism.json` | Restart determinism check that set the fault repetitions. |

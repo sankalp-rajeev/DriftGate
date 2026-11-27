@@ -50,13 +50,21 @@ This file is limited to work that adds value to the resume and runs in the AWS A
   - Pin the file and its SHA-256 in `serving/models.yaml` and add it to `ATTRIBUTION.md`.
 - **Reference:** embed the reference outputs once and store the vectors in the reference bundle in S3, next to the reference logits.
 - **Statistic:** per prompt, the cosine similarity between candidate and reference embeddings. Report the mean and the 5th percentile. The gate input is `1 − p5 similarity`.
-- **Thresholds:** calibrate on the A/A runs the same way as D2, D3 and D5. Write a pre-registration note in `docs/prereg/` *before* the fault runs. Thresholds go in `gate/thresholds.json` under a new key.
+- **Where the data comes from:** score D7 on the existing laptop study (19–20 Nov) instead of running anything new. D3's raw measurements already hold the 32 generated token IDs for every prompt in every A/A and fault run.
+  - Convert the IDs back to text with the reference model's tokenizer (llama-server `/detokenize`).
+  - Embed the text and compute D7 offline, so D7 is scored on exactly the runs D2, D3, D5 and D6 were scored on.
+  - **Data on disk (confirmed 26 Nov, WSL `~/projects/driftgate`):**
+    - Reference: `artifacts/reference/d7efb072…/5c1277b1db8a99d27b529ae10370372e4da22ad6134478f18dcd8aae19d75d49/local-Sankalps-Razer/measurement.json`, the baseline named in `gate/baseline.yaml`. Ignore the other config hash `d0db861e…`, which isn't the study reference.
+    - A/A: `runs/2026-11-19-study/aa/` (30 runs: the same 20 fit and 10 held-out split as the study).
+    - Faults: `runs/2026-11-19-study/faults/F1`–`F9` and `F8-downgrade-v1.0.0` (2 runs each), plus `runs/2026-11-20-f8`. Use the F8 runs the same way `matrix.csv` does (see `docs/results/f8-repair.json`).
+  - If those raw files are missing, re-run the A/A and fault runs on the same WSL laptop the study ran on, so calibration and fault runs come from the same machine.
+- **Thresholds:** fit on the same 20 A/A runs and check on the same 10 held-out runs as the other detectors (`analysis/calibrate.py` with D7 added). Write the pre-registration note in `docs/prereg/` *after* fitting on A/A and *before* scoring any fault run. For the Lab, the thresholds get a transfer check, as in the 24 Nov deviation. They go in `gate/thresholds.json` under a new key.
 - **GateScore:** D7 joins the score with its own weight, and the CloudWatch alarm path doesn't change.
 
 **Acceptance**
 - `gate/d7.py` with unit tests: identical texts give similarity 1, and the timeout and empty-output paths are handled.
-- A/A false-alarm rate measured on the Lab t3.large (one session, launched early so it finishes well inside the 4-hour limit), at most what the other detectors allow.
-- The F1–F9 fault matrix re-run with D7 added, on the Ubuntu machine as before, because it outlives a 4-hour Lab session. Update the fault-by-detector table in `docs/results.md` and report misses honestly, F8 included. Long runs are launched in the background; the agent records the run IDs and stops.
+- D7 scored offline on the existing study: false-alarm rate on the 10 held-out A/A runs, and a D7 column added to `matrix.csv` and the fault-by-detector table in `docs/results.md`. Report misses honestly, F8 included.
+- Lab transfer check: a few A/A runs on t3.large confirm the D7 thresholds don't false-alarm there. Launch them in the background inside one Lab session; the agent records the run IDs and stops.
 - One end-to-end Lab run (push → gate with D7 → approve → CodeDeploy) passes, with D7 visible in the run record and GateScore.
 - The ValidateService time increase is measured and reported. Target: under 1 min per instance.
 
@@ -133,7 +141,7 @@ Make sure the resume and README say these plainly. Each one already matches line
 | Section | Status |
 |---|---|
 | Rule zero | Steps 1–2 and 6 complete. GitHub tag `ece528-final` points to `c458611`. Work is on `feat/post-demo`. The 26 Nov probes are recorded in `docs/lab-constraints.md`. |
-| 1. D7 detector | Implemented and pre-registered in `0f51b1f`. Lint passed and 536 tests passed. Ubuntu matrix launched as `2026-11-26-d7-matrix`. Lab A/A awaits a fresh session. The calibrated threshold, Lab reference upload, ValidateService timing, end-to-end deployment, and matrix results are pending. |
+| 1. D7 detector | Offline scoring complete on the saved reference and study runs. Threshold 0.0 and 0/10 held-out false alarms at L1–L3. D7 detected F1–F4 in 2/2 runs each and missed both F8 pairs. Matrix and results updated. After Dec 2 teardown: Lab transfer check, `make up`, S3 reference upload, end-to-end deployment, and ValidateService timing. |
 | 2. Auth: probe | Done (26 Nov) |
 | 2. Auth: build | To do |
 | 3. Wording | To do |
