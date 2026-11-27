@@ -45,6 +45,7 @@ def measure(server: LlamaServer, prompts: list[dict], seed: int) -> list[dict]:
         out.append(
             {
                 "id": p["id"],
+                "text": resp.get("content", ""),
                 "tokens": [s["id"] for s in steps],
                 "top": [[[t["id"], t["logprob"]] for t in s["top_logprobs"]] for s in steps],
                 "timings": {

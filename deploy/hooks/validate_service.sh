@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ValidateService (FR-18): run D3, D5 and D6 through the gate CLI against this instance's
+# ValidateService (FR-18): run D3, D5, D6 and D7 through the gate CLI against this instance's
 # llama-server, keep the verdict, and exit non-zero on gate failure. The gate mode comes from
 # the gate config (report until gate/thresholds.json exists, then enforce; PRD 6.8).
 # DRIFTGATE_FORCE_FAIL=1 makes this hook fail in either mode (T-13 rollback drills).

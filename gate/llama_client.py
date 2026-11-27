@@ -55,6 +55,18 @@ class LlamaServer:
     def props(self) -> dict:
         return self._get("/props")
 
+    def health(self) -> dict:
+        return self._get("/health")
+
+    def embedding(self, text: str) -> list[float]:
+        try:
+            vector = self._post("/v1/embeddings", {"input": text})["data"][0]["embedding"]
+            if not isinstance(vector, list) or not all(isinstance(x, int | float) for x in vector):
+                raise ValueError("expected a list of numbers")
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            raise RequestError(None, f"invalid embeddings response: {exc}", "response") from exc
+        return vector
+
     def tokenize(self, text: str) -> list[int]:
         return self._post("/tokenize", {"content": text, "add_special": False})["tokens"]
 

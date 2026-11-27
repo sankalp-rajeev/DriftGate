@@ -51,7 +51,7 @@ GENAI_SEMCONV_SCHEMA = Schemas.V1_44_0
 GENAI_SEMCONV_VERSION = "1.44.0"
 GENAI_SEMCONV_STATUS = "Development"
 
-DETECTORS = ("D1", "D2", "D3", "D4", "D5", "D6")
+DETECTORS = ("D1", "D2", "D3", "D4", "D5", "D6", "D7")
 
 # Verdict values published as gauges (FR-23 "gate score per run"), labelled by run id. No OTel
 # unit is set, so Prometheus names stay exactly these with dots as underscores (the unit is in

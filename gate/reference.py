@@ -6,6 +6,7 @@ logits (`python -m gate.d2 base`) are stored under one key:
     reference/<model-sha256>/<config-hash>/<instance-type>/
         measurement.json      gate reference
         d2_base.kld           gate.d2 base
+        d7_embeddings.json    gate reference --with-d7 or analysis.d7_runs lab-aa
 
 * `<model-sha256>`: the served model's SHA-256 from `serving/manifest.json`.
 * `<config-hash>`: SHA-256 of the *effective serving config*, the settings that can change model

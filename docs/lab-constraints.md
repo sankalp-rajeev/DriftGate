@@ -13,3 +13,14 @@ Appendix required by FR-28 (instructor request, 18 Nov 2026). Sources: PRD §6.8
 | Research layer on laptop | The Lab's credit budget and 4-hour sessions do not fit the fault matrix and A/A calibration (ADR-004) | Fault injection, A/A calibration, Prometheus, Grafana and OpenTelemetry run on the laptop (WSL, CPU llama.cpp). CloudWatch carries the gate metric, alarms and deploy dashboard in the Lab (ADR-009, FR-29) | Local llama-server smoke test, 17 Nov: about 90 to 100 tokens/s on Qwen2.5-0.5B Q4_K_M (log to attach); Grafana screenshot (to capture, FR-23); `runs/` logs per result row (NFR-07) | Calibration and power numbers come from the laptop CPU, not t3.large. No Prometheus or Grafana in the Lab | n/a |
 | Cost Explorer lag | Cost Explorer works but per-service data runs about a day behind. Lab spent credit updates every 8 to 12 hours | Cost Explorer snapshot taken before teardown, plus the Lab spend panel. Resources tagged `Project=driftgate`; list-price table (PRD §15) as backup | Cost Explorer probe screenshot, 17 Nov (to attach); Cost Explorer snapshot before teardown, 2 Dec (to capture, T-17); Lab spend panel screenshot (to capture) | The last day or so of spend, including the demo and teardown, may be missing from Cost Explorer at submission | n/a |
 | Session stops | Sessions last 4 hours, after which instances stop (course materials, PRD §14.1). The probe "End session, list what still bills" has not been run | Per-session CloudFormation network stack, created by `make up` and deleted by `make down` (FR-21, ADR-005). Models, reference logits, bundles and run records live in the persistent `driftgate-storage` S3 stack, which session teardown never deletes. Fresh session and cold-start dry run (T-21) before the demo; backup video of demo steps 3 to 6 | End-of-session billing probe (to run and capture); `make up` / `make down` console screenshots (to capture); teardown screenshot, 3 Dec (to capture, NFR-09) | No persistent environment. The ALB DNS name changes every session | n/a |
+
+## 26 Nov 2026 probes
+
+| Probe (26 Nov, CloudShell as voclabs) | Result |
+| --- | --- |
+| Bedrock `ListFoundationModels`, `InvokeModel` (Titan Embed v2) | AccessDenied |
+| Cognito user pool, domain, resource server, `client_credentials` token | Pass (RS256 access token issued) |
+| Secrets Manager create, read, delete | Pass |
+| CloudFront `CreateDistribution` | AccessDenied |
+| ACM `ImportCertificate` (self-signed), delete | Pass |
+| Lab terminal AWS CLI | Too old for `bedrock` commands; probes were run in CloudShell |

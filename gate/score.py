@@ -50,7 +50,12 @@ def validate(thresholds: dict) -> list[dict]:
     if thresholds.get("schema") != THRESHOLDS_SCHEMA:
         raise ValueError(f"unsupported thresholds schema {thresholds.get('schema')!r}")
     rules = thresholds.get("rules")
-    if not isinstance(rules, list) or not rules:
+    if not isinstance(rules, list):
+        raise ValueError("thresholds file has no rules")
+    semantic = thresholds.get("D7")
+    if semantic is not None and semantic["value"] is not None:
+        rules = [*rules, semantic | {"detector": "D7"}]
+    if not rules:
         raise ValueError("thresholds file has no rules")
     for r in rules:
         missing = {"detector", "metric", "kind", "value"} - set(r)
@@ -58,6 +63,9 @@ def validate(thresholds: dict) -> list[dict]:
             raise ValueError(f"rule {r} is missing {sorted(missing)}")
         if r["kind"] not in KINDS:
             raise ValueError(f"rule {r}: kind must be one of {KINDS}")
+        weight = r.get("weight", 1.0)
+        if not isinstance(weight, int | float) or not math.isfinite(weight) or weight <= 0:
+            raise ValueError(f"rule {r}: weight must be finite and positive")
         v = r["value"]
         if not isinstance(v, int | float) or not math.isfinite(v):
             raise ValueError(f"rule {r}: value must be a finite number")
@@ -102,7 +110,7 @@ def score(dets: dict, thresholds: dict) -> dict:
             )
             continue
         observed = _lookup(dets[r["detector"]], r["metric"])
-        s = rule_score(observed, r["kind"], r["value"])
+        s = r.get("weight", 1.0) * rule_score(observed, r["kind"], r["value"])
         results.append(r | {"observed": observed, "score": s, "ok": s <= 1})
     if not results:
         raise ValueError("thresholds file has no rules for the measured detectors")

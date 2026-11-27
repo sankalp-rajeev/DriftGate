@@ -25,5 +25,11 @@
       "kind": "upper",
       "value": 1.37
     }
-  ]
+  ],
+  "D7": {
+    "metric": "semantic_drift",
+    "kind": "upper",
+    "weight": 1.0,
+    "value": null
+  }
 }

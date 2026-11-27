@@ -34,3 +34,11 @@ d2:
   ctx_size: 512
   threads: 2            # always, on every machine (PRD Section 6.8; t3.large vCPU count)
   # Reference logits live under the reference key (reference_store above) as d2_base.kld.
+# D7 uses the baseline llama.cpp build and listens only on loopback.
+d7:
+  models: serving/models.yaml
+  llama_cpp_lock: serving/llama_cpp.lock
+  port: 8082
+  aa_generation_port: 8083
+  threads: 2
+  timeout_s: 10

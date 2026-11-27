@@ -1,6 +1,11 @@
 {
   "schema_version": 1,
   "artifacts": {
+    "bge-small-en-v1.5-f16.gguf": {
+      "sha256": "f0b2fef971e8366438bfd2d9aefea1b0115919389448806d290237f638bae999",
+      "size": 67308128,
+      "source": "https://huggingface.co/CompendiumLabs/bge-small-en-v1.5-gguf/resolve/d32f8c040ea3b516330eeb75b72bcc2d3a780ab7/bge-small-en-v1.5-f16.gguf"
+    },
     "qwen2.5-0.5b-instruct-q8_0.gguf": {
       "sha256": "ca59ca7f13d0e15a8cfa77bd17e65d24f6844b554a7b6c12e07a5f89ff76844e",
       "size": 675710816,

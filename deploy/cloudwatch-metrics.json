@@ -12,6 +12,10 @@
     {"name": "D6TtftRatio", "detector": "D6", "path": "ratio.p95_ttft_ms", "unit": "None"},
     {"name": "D6ItlRatio", "detector": "D6", "path": "ratio.p95_itl_ms", "unit": "None"},
     {"name": "D6P95TtftMs", "detector": "D6", "path": "candidate.p95_ttft_ms", "unit": "Milliseconds"},
-    {"name": "D6P95ItlMs", "detector": "D6", "path": "candidate.p95_itl_ms", "unit": "Milliseconds"}
+    {"name": "D6P95ItlMs", "detector": "D6", "path": "candidate.p95_itl_ms", "unit": "Milliseconds"},
+    {"name": "D7MeanSimilarity", "detector": "D7", "path": "mean_similarity", "unit": "None"},
+    {"name": "D7P5Similarity", "detector": "D7", "path": "p5_similarity", "unit": "None"},
+    {"name": "D7SemanticDrift", "detector": "D7", "path": "semantic_drift", "unit": "None"},
+    {"name": "D7EmbeddingSeconds", "detector": "D7", "path": "embedding_seconds", "unit": "Seconds"}
   ]
 }

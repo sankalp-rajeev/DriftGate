@@ -31,6 +31,12 @@ def verdict(mode="report", gate_score=None, ttft_ratio=1.1):
                 "candidate": {"p95_ttft_ms": 210.0, "p95_itl_ms": 21.0},
                 "ratio": {"p95_ttft_ms": ttft_ratio, "p95_itl_ms": 1.05},
             },
+            "D7": {
+                "mean_similarity": 0.98,
+                "p5_similarity": 0.95,
+                "semantic_drift": 0.05,
+                "embedding_seconds": 1.2,
+            },
         },
         "decision": {"mode": mode, "gate_score": gate_score, "exit_code": 0},
     }
@@ -81,8 +87,8 @@ def test_missing_or_non_finite_values_are_skipped():
     assert "GateScore" not in names(pm.metric_data(v2, CONFIG, GROUP))
 
 
-def test_raw_metrics_cover_d3_d5_d6():
-    assert {m["detector"] for m in CONFIG["raw"]} == {"D3", "D5", "D6"}
+def test_raw_metrics_cover_d3_d5_d6_d7():
+    assert {m["detector"] for m in CONFIG["raw"]} == {"D3", "D5", "D6", "D7"}
     # D6 is published as a ratio to the reference p95 (PRD 6.8), plus the raw milliseconds.
     assert {"ratio.p95_ttft_ms", "ratio.p95_itl_ms"} <= {m["path"] for m in CONFIG["raw"]}
 

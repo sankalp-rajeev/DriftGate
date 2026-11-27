@@ -20,6 +20,10 @@ ensure_reference() {
     'import json, shlex, sys; d = json.load(sys.stdin); print("ref_key=%s ref_dir=%s" % (shlex.quote(d["key"]), shlex.quote(d["local_dir"])))')" || return 1
   eval "$fields"
   if [[ -f "$ref_dir/measurement.json" && -f "$ref_dir/d2_base.kld" ]]; then
+    if [[ "${1:-}" == d7 && ! -f "$ref_dir/d7_embeddings.json" ]]; then
+      aws s3 cp --only-show-errors --recursive --exclude '*' --include d7_embeddings.json \
+        "s3://$bucket/$ref_key" "$ref_dir" || return 1
+    fi
     return 0
   fi
   mkdir -p "$ref_dir" || return 1

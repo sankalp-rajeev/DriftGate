@@ -1,10 +1,10 @@
-"""Gate CLI: measure D3, D5 and D6 against a live llama-server and emit JSON (FR-06, FR-08, FR-09).
+"""Gate CLI: measure D3, D5, D6 and D7 against a live llama-server and emit JSON.
 
   python -m gate measure --budget 16 --seed 0 --out runs/x/candidate.json
   python -m gate compare --candidate runs/x/candidate.json --out runs/x/verdict.json
   python -m gate run --budget 16 --seed 0 --out runs/x/verdict.json
 
-  python -m gate reference --seed 0 [--upload]     # reference measurement, PRD Section 6.8
+  python -m gate reference --seed 0 [--with-d7] [--upload]
   python -m gate reference --print-key             # just the reference key
 
 `measure` records raw per-item outputs; `compare` turns the reference measurement and a candidate
@@ -33,7 +33,7 @@ from collections.abc import Callable
 from contextlib import nullcontext
 from pathlib import Path
 
-from gate import d3, d5, d6, telemetry
+from gate import d3, d5, d6, d7, telemetry
 from gate import reference as ref_store
 from gate.llama_client import LlamaServer, RequestError
 from gate.manifest import load_yaml
@@ -81,10 +81,13 @@ def measure(
     d5_budget: int | None = None,
     skip_d3: bool = False,
     stop_after_d3: Callable[[list[dict]], bool] | None = None,
+    embedding_config: dict | None = None,
+    d3_only: bool = False,
 ) -> dict:
     """`budget` D3 prompts and `d5_budget` D5 items (default: `budget`), both file prefixes.
 
     `skip_d3` leaves D3 empty (the RQ2 quantization sweep measures D5 only).
+    `d3_only` omits D5 (the Lab D7 calibration measures the shared D3 path).
     `stop_after_d3` is used by enforced runs to skip D5 after a decisive failure.
     """
     prompts = _jsonl(prompts_path)
@@ -113,8 +116,13 @@ def measure(
             )
         )
     t1 = time.monotonic()
+    semantic = None
+    if d3_run and embedding_config:
+        with _span(tel, "D7"):
+            semantic = d7.capture(d3_run, embedding_config)
     early_stop = stop_after_d3 is not None and stop_after_d3(d3_run)
-    if early_stop:
+    d5_start = time.monotonic()
+    if early_stop or d3_only:
         d5_run = []
     else:
         with _span(tel, "D5"):
@@ -142,9 +150,14 @@ def measure(
             "d5_panel": str(panel_path),
             "d5_panel_sha256": _sha256(panel_path),
         },
-        "wall_clock_s": {"D3": t1 - t0, "D5": 0.0 if early_stop else t2 - t1},
+        "wall_clock_s": {
+            "D3": t1 - t0,
+            "D5": 0.0 if early_stop or d3_only else t2 - d5_start,
+            **({"D7": semantic["seconds"]} if semantic is not None else {}),
+        },
         "d3": d3_run,
         "d5": d5_run,
+        **({"d7": semantic} if semantic is not None else {}),
         **({"early_stop": True} if early_stop else {}),
     }
 
@@ -187,7 +200,22 @@ def detectors(reference: dict, candidate: dict, tel=None) -> dict:
     }
     with _span(tel, "D6"):  # D6 has no measurement of its own: latency from the D3 run
         out["D6"] = d6.metrics(reference["d3"], candidate["d3"])
+    if "d7" in candidate:
+        out["D7"] = semantic_metrics(reference, candidate)
     return out
+
+
+def semantic_metrics(reference: dict, candidate: dict) -> dict:
+    if "d7" not in reference:
+        raise ValueError("no D7 reference embeddings; generate the D7 reference first")
+    base, measured = reference["d7"], candidate["d7"]
+    if base["model_sha256"] != measured["model_sha256"]:
+        raise ValueError("reference and candidate use different D7 embedding models")
+    if any("error" in row for row in base["rows"]):
+        raise ValueError("D7 reference contains request errors")
+    if {row["id"] for row in candidate["d3"]} - {row["id"] for row in base["rows"]}:
+        raise ValueError("D7 reference embeddings do not cover the requested prompts")
+    return d7.metrics(base["rows"], measured["rows"]) | {"embedding_seconds": measured["seconds"]}
 
 
 # ---------- decision ----------
@@ -232,7 +260,11 @@ def decide(dets: dict, mode: str, thresholds_path: Path, env=None) -> dict:
 def verdict(reference: dict, candidate: dict, gate_config: dict, env=None, tel=None) -> dict:
     t0 = time.monotonic()
     dets = detectors(reference, candidate, tel)
-    decision = decide(dets, gate_config["mode"], Path(gate_config["thresholds"]), env)
+    thresholds = Path(gate_config["thresholds"])
+    decision = decide(dets, gate_config["mode"], thresholds, env)
+    if decision["mode"] == "enforce" and "D7" not in dets:
+        if any(rule["detector"] == "D7" for rule in validate(json.loads(thresholds.read_text()))):
+            raise ValueError("a calibrated D7 threshold requires D7 measurements")
     return {
         "schema": VERDICT_SCHEMA,
         "budget": candidate["budget"],
@@ -287,6 +319,7 @@ def _parser() -> argparse.ArgumentParser:
         if name in ("measure", "run", "reference"):
             s.add_argument("--server", help="base URL (default: host and port from --config)")
             s.add_argument("--seed", type=int, required=name != "reference")
+            s.add_argument("--with-d7", action="store_true", help="also measure D7 embeddings")
         if name in ("measure", "run"):
             where = s.add_mutually_exclusive_group(required=True)
             where.add_argument("--budget", type=int, help="D3 prompts and D5 items, both this many")
@@ -342,7 +375,7 @@ def _main(args, tel, span, run_id: str) -> int:
             else:
                 n3, n5 = args.budget, args.budget
             if args.cmd == "run":
-                reference = json.loads(reference_path(args, gate_config).read_text())
+                reference = d7.load_reference(reference_path(args, gate_config))
             if args.cmd == "run" and args.level:
                 have_d3, have_d5 = len(reference["d3"]), len(reference["d5"])
                 if have_d3 < n3 or have_d5 < n5:
@@ -363,6 +396,9 @@ def _main(args, tel, span, run_id: str) -> int:
                 stop_after_d3=_early_stop_rule(gate_config, reference)
                 if args.cmd == "run"
                 else None,
+                embedding_config=gate_config["d7"]
+                if args.with_d7 or (reference is not None and "d7" in reference)
+                else None,
             )
             if m["server"]["model_path"]:
                 span.set_attribute("gen_ai.request.model", Path(m["server"]["model_path"]).name)
@@ -375,7 +411,7 @@ def _main(args, tel, span, run_id: str) -> int:
         else:
             candidate = json.loads(args.candidate.read_text())
         if reference is None:
-            reference = json.loads(reference_path(args, gate_config).read_text())
+            reference = d7.load_reference(reference_path(args, gate_config))
         v = verdict(reference, candidate, gate_config, tel=tel)
     except (OSError, ValueError, KeyError) as e:
         sys.stderr.write(f"gate: {type(e).__name__}: {e}\n")
@@ -436,6 +472,7 @@ def _reference(args, gate_config: dict, tel) -> int:
         Path(gate_config["data"]["d5_panel"]),
         args.config,
         tel,
+        embedding_config=gate_config["d7"] if args.with_d7 else None,
     )
     if any("error" in row for detector in ("d3", "d5") for row in m[detector]):
         raise ValueError("reference measurement contains request errors; reference not written")
@@ -447,10 +484,17 @@ def _reference(args, gate_config: dict, tel) -> int:
         "instance_type": instance,
     }
     path = local / ref_store.MEASUREMENT_FILE
+    embeddings = d7.reference_document(m, key) if "d7" in m else None
+    if embeddings is not None:
+        del m["d7"]
     _write(m, path)
+    if embeddings is not None:
+        _write(embeddings, local / d7.REFERENCE_FILE)
     uploaded = None
     if args.upload:
         uploaded = uri + ref_store.MEASUREMENT_FILE
         ref_store.upload(path, uploaded)
+        if embeddings is not None:
+            ref_store.upload(local / d7.REFERENCE_FILE, uri + d7.REFERENCE_FILE)
     _write({"key": key, "path": str(path), "uploaded": uploaded}, args.out)
     return EXIT_PASS

@@ -54,7 +54,9 @@ def ensure(models_cfg: dict, manifest: dict, entry: dict, fetch=_fetch) -> dict:
         downloaded = True
     digest = sha256_file(path)
     recorded = manifest["artifacts"].get(name)
-    if recorded is None:
+    if "sha256" in entry and entry["sha256"] != digest:
+        status = "mismatch"
+    elif recorded is None:
         manifest["artifacts"][name] = {
             "sha256": digest,
             "size": path.stat().st_size,

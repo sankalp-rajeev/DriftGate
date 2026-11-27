@@ -1,4 +1,4 @@
-"""FR-28: one-page "Lab Constraints and Equivalences" appendix, one table."""
+"""FR-28 appendix and the post-demo Lab probe table."""
 
 import json
 from pathlib import Path
@@ -7,6 +7,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 DOC = ROOT / "docs" / "lab-constraints.md"
+POST_DEMO = "## 26 Nov 2026 probes"
 
 COLUMNS = [
     "Constraint",
@@ -28,7 +29,11 @@ REQUIRED_ROWS = [
 
 
 def table_lines():
-    return [ln for ln in DOC.read_text().splitlines() if ln.startswith("|")]
+    return [ln for ln in appendix().splitlines() if ln.startswith("|")]
+
+
+def appendix():
+    return DOC.read_text().split(POST_DEMO, 1)[0]
 
 
 def cells(line):
@@ -45,7 +50,7 @@ def test_exactly_one_table_with_required_columns():
     assert cells(lines[0]) == COLUMNS
     assert set(cells(lines[1])) == {"---"}
     # one contiguous table
-    text = DOC.read_text().splitlines()
+    text = appendix().splitlines()
     idx = [i for i, ln in enumerate(text) if ln.startswith("|")]
     assert idx == list(range(idx[0], idx[0] + len(idx)))
 
@@ -78,7 +83,28 @@ def test_evidence_is_named_not_invented():
 
 
 def test_fits_on_one_page():
-    assert len(DOC.read_text().split()) <= 1000
+    assert len(appendix().split()) <= 1000
+
+
+def test_post_demo_probe_table_has_all_six_results():
+    section = DOC.read_text().split(POST_DEMO, 1)[1]
+    header, _, *probes = [cells(ln) for ln in section.splitlines() if ln.startswith("|")]
+    assert header == ["Probe (26 Nov, CloudShell as voclabs)", "Result"]
+    assert [row[0].split()[0] for row in probes] == [
+        "Bedrock",
+        "Cognito",
+        "Secrets",
+        "CloudFront",
+        "ACM",
+        "Lab",
+    ]
+    assert [row[1] for row in probes[:5]] == [
+        "AccessDenied",
+        "Pass (RS256 access token issued)",
+        "Pass",
+        "AccessDenied",
+        "Pass",
+    ]
 
 
 def test_least_privilege_marks_enforced_and_documented():

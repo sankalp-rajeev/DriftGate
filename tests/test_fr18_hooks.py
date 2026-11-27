@@ -77,7 +77,7 @@ SESSION2_VERDICTS = sorted(
 
 def test_lab_thresholds_match_the_authorized_l1_profile():
     thresholds = json.loads((ROOT / "gate/thresholds.json").read_text())
-    assert thresholds == {
+    assert {k: thresholds[k] for k in ("schema", "rules")} == {
         "schema": cli.THRESHOLDS_SCHEMA,
         "rules": [
             {"detector": "D2", "metric": "mean_kld", "kind": "upper", "value": 0.0},

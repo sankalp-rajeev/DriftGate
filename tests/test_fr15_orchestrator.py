@@ -4,6 +4,7 @@ AC: a commit to `main` starts a run with no manual steps besides approval; the r
 shows every stage with timestamps and outcome. All AWS calls are mocked with moto.
 """
 
+import json
 import time
 from datetime import datetime
 from pathlib import Path
@@ -93,6 +94,18 @@ def test_full_run_to_success_records_every_stage_with_timestamps(pipeline):
     clock.advance(60)
     assert approve_latest(pipeline, run_id)["result"] == "approved"
     deployment_id = stage(read_record(pipeline["s3"], run_id), "deploy")["details"]["deployment_id"]
+    verdict_key = f"deployments/{deployment_id}/i-sample/verdict.json"
+    pipeline["s3"].put_object(
+        Bucket=BUCKET,
+        Key=verdict_key,
+        Body=json.dumps(
+            {
+                "detectors": {"D7": {"p5_similarity": 0.99, "embedding_seconds": 1.5}},
+                "decision": {"gate_score": 0.5, "scores": {"D7": 0.5}},
+            }
+        ),
+        ServerSideEncryption="AES256",
+    )
 
     clock.advance(600)
     out = orc.handle(deploy_event(deployment_id, "SUCCESS"))
@@ -109,6 +122,12 @@ def test_full_run_to_success_records_every_stage_with_timestamps(pipeline):
     assert stage(rec, "build")["ended_at"] == "2026-11-24T12:05:00+00:00"
     assert stage(rec, "approval")["ended_at"] == "2026-11-24T12:06:00+00:00"
     assert stage(rec, "deploy")["ended_at"] == "2026-11-24T12:16:00+00:00"
+    assert stage(rec, "deploy")["details"]["d7"]["i-sample"] == {
+        "verdict_uri": f"s3://{BUCKET}/{verdict_key}",
+        "result": {"p5_similarity": 0.99, "embedding_seconds": 1.5},
+        "score": 0.5,
+        "gate_score": 0.5,
+    }
     assert rec["ended_at"] == "2026-11-24T12:16:00+00:00"
 
 

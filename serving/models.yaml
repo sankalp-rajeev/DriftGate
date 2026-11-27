@@ -42,3 +42,9 @@ models:
     repo: Qwen/Qwen2.5-0.5B-Instruct-GGUF
     commit: 9217f5db79a29953eb74d5343926648285ec7e67
     license: Apache-2.0
+  - file: bge-small-en-v1.5-f16.gguf
+    role: embedding
+    repo: CompendiumLabs/bge-small-en-v1.5-gguf
+    commit: d32f8c040ea3b516330eeb75b72bcc2d3a780ab7
+    sha256: f0b2fef971e8366438bfd2d9aefea1b0115919389448806d290237f638bae999
+    license: MIT

@@ -53,6 +53,7 @@ STATISTICS = (
     ("D5", "accuracy_drop", "upper"),
     ("D6", "ratio.p95_itl_ms", "upper"),
 )
+D7_STATISTIC = ("D7", "semantic_drift", "upper")
 # Reported, never gated.
 REPORTED = (
     ("D2", "p99_kld"),
@@ -71,6 +72,8 @@ def at_budget(m: dict, level: str) -> dict:
     out["budget"], out["d5_budget"] = n3, n5
     out["d3"] = m["d3"][:n3]
     out["d5"] = m["d5"][:n5]
+    if "d7" in m:
+        out["d7"] = m["d7"] | {"rows": m["d7"]["rows"][:n3]}
     return out
 
 
@@ -88,6 +91,8 @@ def statistics(reference: dict, candidate: dict, level: str, reported: bool = Fa
     """
     out: dict = {}
     wanted = {(d, m) for d, m, _ in STATISTICS} | (set(REPORTED) if reported else set())
+    if "d7" in candidate:
+        wanted.add(D7_STATISTIC[:2])
     if candidate.get("d3"):
         dets = cli.detectors(at_budget(reference, level), at_budget(candidate, level))
         for d, m in wanted:
@@ -181,7 +186,8 @@ def calibrate(
         if any(metric == "error" for stats in stats_cal for _, metric in stats):
             raise ValueError("cannot calibrate thresholds from detector errors")
         rules = []
-        for det, metric, kind in STATISTICS:
+        specs = (*STATISTICS, D7_STATISTIC) if "d7" in reference else STATISTICS
+        for det, metric, kind in specs:
             value = threshold_value(kind, [s[(det, metric)] for s in stats_cal])
             rules.append({"detector": det, "metric": metric, "kind": kind, "value": value})
         reported = {

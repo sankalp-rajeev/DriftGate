@@ -12,6 +12,12 @@
       "Resource": "arn:aws:s3:::${ArtifactBucket}/runs/*"
     },
     {
+      "Sid": "ReadValidationVerdicts",
+      "Effect": "Allow",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::${ArtifactBucket}/deployments/*/verdict.json"
+    },
+    {
       "Sid": "ListRunRecords",
       "Effect": "Allow",
       "Action": "s3:ListBucket",
@@ -19,7 +25,8 @@
       "Condition": {
         "StringLike": {
           "s3:prefix": [
-            "runs/*"
+            "runs/*",
+            "deployments/*"
           ]
         }
       }

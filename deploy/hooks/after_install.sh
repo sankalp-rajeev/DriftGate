@@ -18,10 +18,10 @@ models = yaml.safe_load(open(cfg["models"]))["models"]
 print(next(m["role"] for m in models if m["file"] == cfg["model"]))
 PYEOF
 )"
-"$PY" -m gate.models --role "$role"
+"$PY" -m gate.models --role "$role" --role embedding
 log "model for role $role present and matches the manifest"
 
-ensure_reference
+ensure_reference d7
 
 # Instance serving config: the revision's config with the instance listen address.
 "$PY" - "$DRIFTGATE_SERVING_CONFIG" "$DRIFTGATE_INSTANCE_SERVING_CONFIG" <<PYEOF

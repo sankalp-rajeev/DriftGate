@@ -614,8 +614,46 @@ class Orchestrator:
         if rr.get_stage(record, "deploy")["status"] != "running":
             return _ignored("deploy already finished", record["run_id"])
         ok = state in DEPLOY_SUCCESS
-        rr.end_stage(record, "deploy", "succeeded" if ok else "failed", state, self.clock())
+        evidence = self._d7_evidence(d["deploymentId"])
+        rr.end_stage(
+            record,
+            "deploy",
+            "succeeded" if ok else "failed",
+            state,
+            self.clock(),
+            {"d7": evidence} if evidence else None,
+        )
         return self._finish(record, "succeeded" if ok else "failed")
+
+    def _d7_evidence(self, deployment_id: str) -> dict[str, Any]:
+        """Summarize D7 from the per-instance verdicts retained by ValidateService."""
+        bucket = self.cfg.run_bucket
+        prefix = f"deployments/{deployment_id}/"
+        evidence = {}
+        try:
+            pages = self.s3.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix)
+            for page in pages:
+                for obj in page.get("Contents", []):
+                    key = obj["Key"]
+                    if not key.endswith("/verdict.json"):
+                        continue
+                    try:
+                        verdict = json.loads(
+                            self.s3.get_object(Bucket=bucket, Key=key)["Body"].read()
+                        )
+                        if semantic := verdict.get("detectors", {}).get("D7"):
+                            decision = verdict["decision"]
+                            evidence[key.split("/")[-2]] = {
+                                "verdict_uri": f"s3://{bucket}/{key}",
+                                "result": {k: v for k, v in semantic.items() if k != "per_prompt"},
+                                "score": (decision.get("scores") or {}).get("D7"),
+                                "gate_score": decision.get("gate_score"),
+                            }
+                    except (ClientError, ValueError, KeyError):
+                        log.warning("Unable to read verdict %s", key, exc_info=True)
+        except ClientError:
+            log.warning("Unable to list verdicts for %s", deployment_id, exc_info=True)
+        return evidence
 
     # ---- helpers --------------------------------------------------------------------------
 

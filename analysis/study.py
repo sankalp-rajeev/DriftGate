@@ -328,8 +328,17 @@ class Unit:
 
 
 class Study:
-    def __init__(self, out: Path, python: str = sys.executable, env: dict | None = None):
+    def __init__(
+        self,
+        out: Path,
+        python: str = sys.executable,
+        env: dict | None = None,
+        reference: Path | None = None,
+        include_rq2: bool = True,
+    ):
         self.out, self.python, self.env = out, python, env or dict(os.environ)
+        self.reference = reference
+        self.include_rq2 = include_rq2
         (out / "logs").mkdir(parents=True, exist_ok=True)
 
     def log(self, msg: str) -> None:
@@ -389,6 +398,8 @@ class Study:
             self.python, "-m", "faults.aa", "--runs", "1", "--start", str(i), "--seed", "0",
             "--level", LEVEL, "--bundle", str(resolved), "--out", str(out), *extra,
             ]  # fmt: skip
+            if self.reference is not None:
+                cmd.extend(["--reference", str(self.reference)])
             self.sh(name, cmd, env() if callable(env) else env)
 
         seed = int(extra[extra.index("--run-seed") + 1]) if "--run-seed" in extra else i
@@ -459,16 +470,17 @@ class Study:
                 yield self.aa(
                     f"{fault}-{k + 1}", bundle, self.out / "faults" / fault, k, extra, env, fault
                 )
-        for model, fault in SWEEP_NEW.items():
-            extra = ["--d2", "--d5-only"]
-            yield self.aa(
-                f"sweep-{model}",
-                lambda fault=fault: self.bundle(fault),
-                self.out / "sweep" / model,
-                0,
-                extra,
-                fault=fault,
-            )
+        if self.include_rq2:
+            for model, fault in SWEEP_NEW.items():
+                extra = ["--d2", "--d5-only"]
+                yield self.aa(
+                    f"sweep-{model}",
+                    lambda fault=fault: self.bundle(fault),
+                    self.out / "sweep" / model,
+                    0,
+                    extra,
+                    fault=fault,
+                )
         yield self.analysis_unit()
 
     def timing(self) -> Iterator[Unit]:
@@ -530,7 +542,13 @@ class Study:
 
     def f8_env(self) -> dict:
         info = self.f8_info()
-        return {**self.env, "LLAMA_CPP_BIN": info["bin_dir"]}
+        from gate.serve import llama_bin_dir
+
+        return {
+            "DRIFTGATE_EMBEDDING_BIN": str(llama_bin_dir()),
+            **self.env,
+            "LLAMA_CPP_BIN": info["bin_dir"],
+        }
 
     def f8_run_matches(self, record: Path) -> bool:
         from gate.serve import engine_matches, version_commit
@@ -606,6 +624,8 @@ class Study:
         return Unit("f8-record-and-build", done, run, validate=True)
 
     def analysis_unit(self) -> Unit:
+        matrix_path = self.out / "matrix.csv"
+
         def run():
             missing = []
             for unit in self.plan():
@@ -621,12 +641,15 @@ class Study:
 
             gate_config = load_yaml(Path("gate/config.yaml"))
             key = ref_store.resolve_key(gate_config, {})
-            ref_path = ref_store.local_dir(gate_config, key) / ref_store.MEASUREMENT_FILE
+            ref_path = self.reference or (
+                ref_store.local_dir(gate_config, key) / ref_store.MEASUREMENT_FILE
+            )
             cal_dir = self.out / "calibration"
             args = ["--runs", str(self.out / "aa"), "--reference", str(ref_path)]
             calibrate.main(args + ["--out-dir", str(cal_dir)])
             fdirs = [self.out / "faults" / f for f in FAULTS]
             faults = [str(d) for d in fdirs if d.is_dir()]
+            pending_matrix = matrix_path.with_suffix(".csv.tmp")
             matrix.main(
                 [
                     "--reference",
@@ -636,8 +659,11 @@ class Study:
                     "--faults",
                     *faults,
                 ]
-                + ["--out", str(self.out / "matrix.csv")]
+                + ["--out", str(pending_matrix)]
             )
+            pending_matrix.replace(matrix_path)
+            if not self.include_rq2:
+                return
             reference = json.loads(ref_path.read_text())
             sweep = {}
             for name, rel in SWEEP_REUSED.items():
@@ -652,7 +678,8 @@ class Study:
             rq2.main(["--points", str(self.out / "rq2-points.json"),
                       "--out", str(self.out / "rq2.json")])  # fmt: skip
 
-        return Unit("analysis", lambda: (self.out / "rq2.json").exists(), run)
+        result = self.out / "rq2.json" if self.include_rq2 else matrix_path
+        return Unit("analysis", result.exists, run)
 
 
 # ---------- main loop and status ----------
