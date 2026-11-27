@@ -30,6 +30,11 @@
     "metric": "semantic_drift",
     "kind": "upper",
     "weight": 1.0,
-    "value": null
+    "value": null,
+    "offline_thresholds": {
+      "L1": 0.0,
+      "L2": 0.0,
+      "L3": 0.0
+    }
   }
 }
