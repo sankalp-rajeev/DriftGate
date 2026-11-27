@@ -1,0 +1,542 @@
+{
+  "F1/run-00": {
+    "source": "runs/2026-11-19-study/faults/F1/run-00.measurement.json",
+    "sha256": "bce1cc458f0f1944b27eba56c82bcdb0a54d2187168787f3a10fd252b5ef9626",
+    "levels": {
+      "L1": {
+        "n_prompts": 16,
+        "mean_similarity": 0.9036548516594913,
+        "p5_similarity": 0.697057646810229,
+        "semantic_drift": 0.30294235318977103,
+        "detected": true
+      },
+      "L2": {
+        "n_prompts": 32,
+        "mean_similarity": 0.9065198993982304,
+        "p5_similarity": 0.7272905028579892,
+        "semantic_drift": 0.27270949714201076,
+        "detected": true
+      },
+      "L3": {
+        "n_prompts": 64,
+        "mean_similarity": 0.9000691581934189,
+        "p5_similarity": 0.681975806039018,
+        "semantic_drift": 0.318024193960982,
+        "detected": true
+      }
+    }
+  },
+  "F1/run-01": {
+    "source": "runs/2026-11-19-study/faults/F1/run-01.measurement.json",
+    "sha256": "b95f3d92ac8815cdbe26b0abac93c5eb85baf4bb98769f873ed59f664d4fcf49",
+    "levels": {
+      "L1": {
+        "n_prompts": 16,
+        "mean_similarity": 0.9036548516594913,
+        "p5_similarity": 0.697057646810229,
+        "semantic_drift": 0.30294235318977103,
+        "detected": true
+      },
+      "L2": {
+        "n_prompts": 32,
+        "mean_similarity": 0.9065198993982304,
+        "p5_similarity": 0.7272905028579892,
+        "semantic_drift": 0.27270949714201076,
+        "detected": true
+      },
+      "L3": {
+        "n_prompts": 64,
+        "mean_similarity": 0.9000691581934189,
+        "p5_similarity": 0.681975806039018,
+        "semantic_drift": 0.318024193960982,
+        "detected": true
+      }
+    }
+  },
+  "F2/run-00": {
+    "source": "runs/2026-11-19-study/faults/F2/run-00.measurement.json",
+    "sha256": "b327832888857563926da413ea1a685a2294b9487022481c37e1311e445ba456",
+    "levels": {
+      "L1": {
+        "n_prompts": 16,
+        "mean_similarity": 0.7507967932364675,
+        "p5_similarity": 0.3745232248478785,
+        "semantic_drift": 0.6254767751521215,
+        "detected": true
+      },
+      "L2": {
+        "n_prompts": 32,
+        "mean_similarity": 0.7894767720408954,
+        "p5_similarity": 0.43887703547685153,
+        "semantic_drift": 0.5611229645231485,
+        "detected": true
+      },
+      "L3": {
+        "n_prompts": 64,
+        "mean_similarity": 0.7823440122122806,
+        "p5_similarity": 0.401102900745074,
+        "semantic_drift": 0.5988970992549261,
+        "detected": true
+      }
+    }
+  },
+  "F2/run-01": {
+    "source": "runs/2026-11-19-study/faults/F2/run-01.measurement.json",
+    "sha256": "d90f7ecb938ae09679d7f58fa0c223f32ca0ccbaa105237ec0bf6dcb2b97968e",
+    "levels": {
+      "L1": {
+        "n_prompts": 16,
+        "mean_similarity": 0.7507967932364675,
+        "p5_similarity": 0.3745232248478785,
+        "semantic_drift": 0.6254767751521215,
+        "detected": true
+      },
+      "L2": {
+        "n_prompts": 32,
+        "mean_similarity": 0.7894767720408954,
+        "p5_similarity": 0.43887703547685153,
+        "semantic_drift": 0.5611229645231485,
+        "detected": true
+      },
+      "L3": {
+        "n_prompts": 64,
+        "mean_similarity": 0.7823440122122806,
+        "p5_similarity": 0.401102900745074,
+        "semantic_drift": 0.5988970992549261,
+        "detected": true
+      }
+    }
+  },
+  "F3/run-00": {
+    "source": "runs/2026-11-19-study/faults/F3/run-00.measurement.json",
+    "sha256": "a16bba272aff0e0f95a60c9703cd2e61cc3293f5a1e08491a2b6112cb22f049d",
+    "levels": {
+      "L1": {
+        "n_prompts": 16,
+        "mean_similarity": 0.5610639488578208,
+        "p5_similarity": 0.41642948863370904,
+        "semantic_drift": 0.583570511366291,
+        "detected": true
+      },
+      "L2": {
+        "n_prompts": 32,
+        "mean_similarity": 0.5570123839896826,
+        "p5_similarity": 0.3809450073276857,
+        "semantic_drift": 0.6190549926723143,
+        "detected": true
+      },
+      "L3": {
+        "n_prompts": 64,
+        "mean_similarity": 0.5686560411140728,
+        "p5_similarity": 0.39407478709073357,
+        "semantic_drift": 0.6059252129092665,
+        "detected": true
+      }
+    }
+  },
+  "F3/run-01": {
+    "source": "runs/2026-11-19-study/faults/F3/run-01.measurement.json",
+    "sha256": "ba9525add8b654f855b530081e7a423bbf595e9feb07138a6b411ad4a761212d",
+    "levels": {
+      "L1": {
+        "n_prompts": 16,
+        "mean_similarity": 0.5610639488578208,
+        "p5_similarity": 0.41642948863370904,
+        "semantic_drift": 0.583570511366291,
+        "detected": true
+      },
+      "L2": {
+        "n_prompts": 32,
+        "mean_similarity": 0.5570123839896826,
+        "p5_similarity": 0.3809450073276857,
+        "semantic_drift": 0.6190549926723143,
+        "detected": true
+      },
+      "L3": {
+        "n_prompts": 64,
+        "mean_similarity": 0.5686560411140728,
+        "p5_similarity": 0.39407478709073357,
+        "semantic_drift": 0.6059252129092665,
+        "detected": true
+      }
+    }
+  },
+  "F4/run-00": {
+    "source": "runs/2026-11-19-study/faults/F4/run-00.measurement.json",
+    "sha256": "f15aa74f9ecbd897d1987c75379de9178f90d6d9efce6cceb87d55a55ce35fee",
+    "levels": {
+      "L1": {
+        "n_prompts": 16,
+        "mean_similarity": 0.9161348708393262,
+        "p5_similarity": 0.6730709671079584,
+        "semantic_drift": 0.32692903289204156,
+        "detected": true
+      },
+      "L2": {
+        "n_prompts": 32,
+        "mean_similarity": 0.8844504699040988,
+        "p5_similarity": 0.5626718738317321,
+        "semantic_drift": 0.4373281261682679,
+        "detected": true
+      },
+      "L3": {
+        "n_prompts": 64,
+        "mean_similarity": 0.8959528094022983,
+        "p5_similarity": 0.5718559061990748,
+        "semantic_drift": 0.4281440938009252,
+        "detected": true
+      }
+    }
+  },
+  "F4/run-01": {
+    "source": "runs/2026-11-19-study/faults/F4/run-01.measurement.json",
+    "sha256": "b79b98e851422be2f0d411df3b0e6c22c161ac13da3aadb52d9a0f4755b03766",
+    "levels": {
+      "L1": {
+        "n_prompts": 16,
+        "mean_similarity": 0.9161348708393262,
+        "p5_similarity": 0.6730709671079584,
+        "semantic_drift": 0.32692903289204156,
+        "detected": true
+      },
+      "L2": {
+        "n_prompts": 32,
+        "mean_similarity": 0.8844504699040988,
+        "p5_similarity": 0.5626718738317321,
+        "semantic_drift": 0.4373281261682679,
+        "detected": true
+      },
+      "L3": {
+        "n_prompts": 64,
+        "mean_similarity": 0.8959528094022983,
+        "p5_similarity": 0.5718559061990748,
+        "semantic_drift": 0.4281440938009252,
+        "detected": true
+      }
+    }
+  },
+  "F5/run-00": {
+    "source": "runs/2026-11-19-study/faults/F5/run-00.measurement.json",
+    "sha256": "cf613cd2ddaf1b6921a15987ba0de60b59af4a9dbeeb29bc0a63e9039e05e5ff",
+    "levels": {
+      "L1": {
+        "n_prompts": 16,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      },
+      "L2": {
+        "n_prompts": 32,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      },
+      "L3": {
+        "n_prompts": 64,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      }
+    }
+  },
+  "F5/run-01": {
+    "source": "runs/2026-11-19-study/faults/F5/run-01.measurement.json",
+    "sha256": "f7cc0d69841f239f6e7f104d904c601756b6947a99e8b212db67b5467dcd8f14",
+    "levels": {
+      "L1": {
+        "n_prompts": 16,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      },
+      "L2": {
+        "n_prompts": 32,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      },
+      "L3": {
+        "n_prompts": 64,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      }
+    }
+  },
+  "F6/run-00": {
+    "source": "runs/2026-11-19-study/faults/F6/run-00.measurement.json",
+    "sha256": "79056bfce835a977d26b504aada631658f06e2fda54c86ecb12b3b19c0eb2c6e",
+    "levels": {
+      "L1": {
+        "n_prompts": 16,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      },
+      "L2": {
+        "n_prompts": 32,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      },
+      "L3": {
+        "n_prompts": 64,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      }
+    }
+  },
+  "F6/run-01": {
+    "source": "runs/2026-11-19-study/faults/F6/run-01.measurement.json",
+    "sha256": "17cb4145a9aee7312558f5eac176139af339587a9aeecd6bf589c4fdfa88bcfe",
+    "levels": {
+      "L1": {
+        "n_prompts": 16,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      },
+      "L2": {
+        "n_prompts": 32,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      },
+      "L3": {
+        "n_prompts": 64,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      }
+    }
+  },
+  "F7/run-00": {
+    "source": "runs/2026-11-19-study/faults/F7/run-00.measurement.json",
+    "sha256": "ba14f9fae3a0264a814f1709991e733595d09664c93cdb4306790cd1bbebb46e",
+    "levels": {
+      "L1": {
+        "n_prompts": 16,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      },
+      "L2": {
+        "n_prompts": 32,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      },
+      "L3": {
+        "n_prompts": 64,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      }
+    }
+  },
+  "F7/run-01": {
+    "source": "runs/2026-11-19-study/faults/F7/run-01.measurement.json",
+    "sha256": "9d6f0d52e68a853c7223070ad0354a94ac2ab4f63f664ef94c3ab492bb6b0fdc",
+    "levels": {
+      "L1": {
+        "n_prompts": 16,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      },
+      "L2": {
+        "n_prompts": 32,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      },
+      "L3": {
+        "n_prompts": 64,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      }
+    }
+  },
+  "F8/run-00": {
+    "source": "runs/2026-11-19-study/faults/F8/run-00.measurement.json",
+    "sha256": "ae52bd89f2b1d2512031e93f23c6959f8932a06a8ccb00077adb29a6cc704bf3",
+    "levels": {
+      "L1": {
+        "n_prompts": 16,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      },
+      "L2": {
+        "n_prompts": 32,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      },
+      "L3": {
+        "n_prompts": 64,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      }
+    }
+  },
+  "F8/run-01": {
+    "source": "runs/2026-11-19-study/faults/F8/run-01.measurement.json",
+    "sha256": "28863d249714f7db441a4404f1371d45884edcf728e4f55da0e3f3af8143664e",
+    "levels": {
+      "L1": {
+        "n_prompts": 16,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      },
+      "L2": {
+        "n_prompts": 32,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      },
+      "L3": {
+        "n_prompts": 64,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      }
+    }
+  },
+  "F9/run-00": {
+    "source": "runs/2026-11-19-study/faults/F9/run-00.measurement.json",
+    "sha256": "c0ede7359438f31bb6d3b1aefd1864f500507e33aa2a5f3882718433ae0be970",
+    "levels": {
+      "L1": {
+        "n_prompts": 16,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      },
+      "L2": {
+        "n_prompts": 32,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      },
+      "L3": {
+        "n_prompts": 64,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      }
+    }
+  },
+  "F9/run-01": {
+    "source": "runs/2026-11-19-study/faults/F9/run-01.measurement.json",
+    "sha256": "d86703dce7f7cde46242f5ea489421e223cf0fb9daa1fd7a1895dadb7595678c",
+    "levels": {
+      "L1": {
+        "n_prompts": 16,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      },
+      "L2": {
+        "n_prompts": 32,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      },
+      "L3": {
+        "n_prompts": 64,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      }
+    }
+  },
+  "F8-downgrade-v1.0.0/run-00": {
+    "source": "runs/2026-11-19-study/faults/F8-downgrade-v1.0.0/run-00.measurement.json",
+    "sha256": "a7dd85069e3a7c2e9f604698b8939135c4ad0d9f3cdc6e9a04a06f0464321d2c",
+    "levels": {
+      "L1": {
+        "n_prompts": 16,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      },
+      "L2": {
+        "n_prompts": 32,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      },
+      "L3": {
+        "n_prompts": 64,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      }
+    }
+  },
+  "F8-downgrade-v1.0.0/run-01": {
+    "source": "runs/2026-11-19-study/faults/F8-downgrade-v1.0.0/run-01.measurement.json",
+    "sha256": "bad1ca41989f425b60d04446f3879b311955f0d13cda0d8fc8b3d485dc2cc7b4",
+    "levels": {
+      "L1": {
+        "n_prompts": 16,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      },
+      "L2": {
+        "n_prompts": 32,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      },
+      "L3": {
+        "n_prompts": 64,
+        "mean_similarity": 1.0,
+        "p5_similarity": 1.0,
+        "semantic_drift": 0.0,
+        "detected": false
+      }
+    }
+  }
+}
