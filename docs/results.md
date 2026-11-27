@@ -112,7 +112,7 @@ The Q8_0, Q4_K_M, Q2_K and original F3 points reuse `aa/run-00`, `faults/F1/run-
 `faults/F2/run-00` and `faults/F3/run-00` respectively. The other quantizations use the
 matching `sweep/<quantization>/run-00` files.
 
-## Offline D7 results
+## Greedy D7 null result
 
 The [offline pre-registration](prereg/2026-11-26-d7-offline.md) fixes the fitted
 threshold before fault scoring. D7 was calibrated on the original 20 fit runs
@@ -124,7 +124,9 @@ At each budget, D7 detected **F1, F2, F3 and F4** in **2/2** repetitions each.
 It detected **0/2** for each of F5, F6, F7, F8 and F9. The corrected b12557 F8 pair
 and the v1.0.0 downgrade pair each returned **0/2** at every budget. The main matrix
 uses the corrected pair.
-The combined gate detection counts were unchanged.
+The combined gate detection counts were unchanged. Greedy D7 added no detections
+and missed both engine-change pairs. Section 1b of [NEXT_STEPS.md](../NEXT_STEPS.md)
+records the separate sampled-decoding experiment.
 
 The [matrix](../results/2026-11-19-study/matrix.csv),
 [calibration artifact](../results/2026-11-19-study/d7-calibration.json) and

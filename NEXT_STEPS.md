@@ -75,6 +75,31 @@ Say "embeddings", not "vector database". This work doesn't use one.
 
 ---
 
+## 1b. D7 under sampled decoding
+
+- Use the 16 L1 D3 prompts and generate up to 128 new tokens per prompt. Inherit
+  the serving bundle's sampler defaults. The reference defaults are temperature
+  0.8, top-k 40, top-p 0.95, and min-p 0.05. F6 uses its own changed default.
+- Generate five sampled reference texts per prompt. Embed them and store each
+  prompt's arithmetic centroid. D7 drift for a run is 1 minus the mean cosine
+  similarity to those centroids. For exact match, use 1 minus the share of
+  candidate texts that exactly equal one of the five reference texts for the
+  same prompt.
+- Use fixed seeds 1–5 for the reference, 6–25 for A/A fitting, 26–35 for A/A
+  held out, and 36 and 37 for each fault. Generate the reference and all 30 A/A
+  runs first. Fit each cutoff as the maximum drift over the 20 fit runs, then
+  count held-out alarms strictly above it. Commit both thresholds and the seed
+  lists in the pre-registration before generating or scoring any fault output.
+- Use the original study's WSL bundles for F1–F9, with two trials each, and
+  run the corrected b12557 F8 pair as well. Report both F8 pairs separately.
+  Keep the fitted cutoffs fixed throughout fault scoring.
+- Use the detached tmux session `2026-11-26-d7-sampled` on socket
+  `driftgate-d7-sampled`. The run directory is `runs/2026-11-26-d7-sampled/`.
+  The runner writes held-out false alarms and per-fault detections for both
+  metrics to `report.md` there.
+
+---
+
 ## 2. Authenticated inference API
 
 **Today:** the ALB forwards port 80 straight to llama-server on 8080. Anyone with the ALB address can use the model.
@@ -141,7 +166,8 @@ Make sure the resume and README say these plainly. Each one already matches line
 | Section | Status |
 |---|---|
 | Rule zero | Steps 1–2 and 6 complete. GitHub tag `ece528-final` points to `c458611`. Work is on `feat/post-demo`. The 26 Nov probes are recorded in `docs/lab-constraints.md`. |
-| 1. D7 detector | Offline scoring complete on the saved reference and study runs. Threshold 0.0 and 0/10 held-out false alarms at L1–L3. D7 detected F1–F4 in 2/2 runs each and missed both F8 pairs. Matrix and results updated. After Dec 2 teardown: Lab transfer check, `make up`, S3 reference upload, end-to-end deployment, and ValidateService timing. |
+| 1. D7 detector | Greedy scoring complete. D7 added no detections to the combined gate and missed both F8 pairs. Lab deployment of D7 is on hold pending 1b. Lab transfer, `make up`, S3 upload, deployment, and ValidateService timing remain deferred until after the Dec 2 teardown. |
+| 1b. D7 under sampled decoding | WSL run `runs/2026-11-26-d7-sampled/` on tmux socket `driftgate-d7-sampled`. Results pending. |
 | 2. Auth: probe | Done (26 Nov) |
 | 2. Auth: build | To do |
 | 3. Wording | To do |
